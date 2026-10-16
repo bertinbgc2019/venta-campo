@@ -1,0 +1,6 @@
+{
+  "name": "Venta de Campo - Ropa Táctica",
+  "description": "Aplicación táctica para la gestión ágil de inventarios, pedidos en ruta y ventas en campo de equipamiento y ropa táctica militar, policial y de seguridad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

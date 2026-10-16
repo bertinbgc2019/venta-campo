@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#0f172a"/>
+  <!-- Tactical Hex Shield Background -->
+  <path d="M256 64L416 136V280C416 376 348 438 256 464C164 438 96 376 96 280V136L256 64Z" fill="#1e293b" stroke="#d97706" stroke-width="12" stroke-linejoin="round"/>
+  <!-- Tactical Chevron Marks -->
+  <path d="M192 190L256 230L320 190" stroke="#f59e0b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M192 250L256 290L320 250" stroke="#f59e0b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M192 310L256 350L320 310" stroke="#f59e0b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Crosshair elements -->
+  <circle cx="256" cy="270" r="110" stroke="#475569" stroke-width="6" stroke-dasharray="12 12"/>
+  <line x1="256" y1="130" x2="256" y2="160" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+  <line x1="256" y1="380" x2="256" y2="410" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+  <line x1="120" y1="270" x2="150" y2="270" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+  <line x1="362" y1="270" x2="392" y2="270" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+</svg>

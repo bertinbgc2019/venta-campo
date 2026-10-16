@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Venta de Campo - Ropa Táctica</title>
+  <meta name="description" content="Aplicación táctica para la gestión ágil de inventarios, pedidos en ruta y ventas en campo de equipamiento y ropa táctica militar, policial y de seguridad." />
+  <meta property="og:title" content="Venta de Campo - Ropa Táctica" />
+  <meta property="og:description" content="Aplicación táctica para la gestión ágil de inventarios, pedidos en ruta y ventas en campo de equipamiento y ropa táctica militar, policial y de seguridad." />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ================================================================
+       PULIDO VISUAL GLOBAL (solo estética, no toca ninguna función JS)
+       ================================================================ */
+    :root{
+      --anillo-foco: rgba(37,99,235,.25);
+    }
+    html{ -webkit-tap-highlight-color: transparent; }
+    body{
+      background-color:#eef1f7;
+      background-image:
+        radial-gradient(900px 480px at 8% -8%, rgba(219,234,254,.7) 0%, transparent 60%),
+        radial-gradient(760px 420px at 108% 6%, rgba(209,250,229,.6) 0%, transparent 55%);
+      background-attachment: fixed;
+    }
+    #pantalla-app, #pantalla-login > div, #pantalla-acceso-no-autorizado > div{
+      box-shadow: 0 18px 48px -18px rgba(30,41,59,.28), 0 2px 8px rgba(30,41,59,.06);
+    }
+    input, select, textarea{ transition: box-shadow .15s ease, border-color .15s ease; }
+    input:focus, select:focus, textarea:focus{
+      outline: none !important;
+      box-shadow: 0 0 0 3px var(--anillo-foco);
+    }
+    button{ transition: transform .08s ease, box-shadow .15s ease, filter .15s ease, background-color .15s ease, border-color .15s ease; }
+    button:active{ transform: scale(0.97); }
+    ::-webkit-scrollbar{ width:8px; height:8px; }
+    ::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:8px; }
+    ::-webkit-scrollbar-thumb:hover{ background:#94a3b8; }
+    ::-webkit-scrollbar-track{ background:transparent; }
+    body.modo-pc #pantalla-app{max-width:none!important;width:100%;}
+    body.modo-pc #pantalla-app main{max-width:none;}
+    body.modo-pc #menu-accesos{max-width:none;}
+    body.modo-pc #pantalla-superadmin > div{max-width:1200px!important;}
+    body.modo-pc #pantalla-operacion > div{max-width:1100px!important;}
+    @media (min-width:900px){ body:not(.modo-movil) #pantalla-app{max-width:1100px;} }
+    .btn-modo-vista{font-size:10px;padding:.35rem .55rem;border-radius:.6rem;border:1px solid #cbd5e1;background:#fff;color:#334155;}
+  </style>
+  <script>
+    // Controladores inmediatos de modales para respuesta instantánea en cualquier entorno
+    window.abrirModalVendedorLogin = function() {
+      var m = document.getElementById('modal-vendedor-login');
+      if (m) m.classList.remove('hidden');
+    };
+    window.cerrarModalVendedorLogin = function() {
+      var m = document.getElementById('modal-vendedor-login');
+      if (m) m.classList.add('hidden');
+    };
+    window.abrirModalAdminLogin = function() {
+      var m = document.getElementById('modal-admin-login');
+      if (m) m.classList.remove('hidden');
+    };
+    window.cerrarModalAdminLogin = function() {
+      var m = document.getElementById('modal-admin-login');
+      if (m) m.classList.add('hidden');
+    };
+    window.abrirModalRootLogin = function() {
+      var m = document.getElementById('modal-root-login');
+      if (m) m.classList.remove('hidden');
+    };
+    window.cerrarModalRootLogin = function() {
+      var m = document.getElementById('modal-root-login');
+      if (m) m.classList.add('hidden');
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+      var bV = document.getElementById('btn-abrir-login-vendedor');
+      if (bV) bV.addEventListener('click', window.abrirModalVendedorLogin);
+      var bA = document.getElementById('btn-abrir-login-admin');
+      if (bA) bA.addEventListener('click', window.abrirModalAdminLogin);
+      var bR = document.getElementById('btn-abrir-login-root');
+      if (bR) bR.addEventListener('click', window.abrirModalRootLogin);
+      var bRf = document.getElementById('btn-root-flotante');
+      if (bRf) bRf.addEventListener('click', window.abrirModalRootLogin);
+    });
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen relative font-sans">
+
+  <!-- BOTÓN FLOTANTE ROOT SUPERADMIN (SOLO EN LOGIN) -->
+  <button id="btn-root-flotante" onclick="abrirModalRootLogin()" title="Acceso Root SuperAdmin" class="fixed top-3 right-3 z-50 bg-purple-900/80 hover:bg-purple-700 text-purple-200 border border-purple-500/50 p-2.5 rounded-full shadow-lg transition duration-200 backdrop-blur cursor-pointer">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </svg>
+  </button>
+
+  <!-- 1. PANTALLA DE LOGIN PRINCIPAL -->
+  <div id="pantalla-login" class="max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-6 rounded-2xl border border-slate-300 w-full shadow-2xl space-y-4">
+      <div class="text-center">
+        <div class="inline-flex p-2.5 bg-blue-50 text-blue-600 rounded-xl mb-2">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+          </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-blue-600">Ventas en Campo</h2>
+        <p class="text-slate-600 text-xs mt-1">Conector Firebase & Control Operativo en Tiempo Real</p>
+      </div>
+
+      <!-- Estado de Conexión en Pantalla Login -->
+      <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl flex items-center justify-between text-xs">
+        <span class="text-slate-600 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Conector Firebase:
+        </span>
+        <span id="login-estado-conector" class="font-semibold text-emerald-600">Conectado</span>
+      </div>
+
+      <div class="space-y-3 pt-1">
+        <button id="btn-abrir-login-vendedor" onclick="abrirModalVendedorLogin()" class="w-full bg-blue-600 hover:bg-blue-500 text-white p-3.5 rounded-xl font-medium text-sm flex justify-between items-center transition shadow-sm cursor-pointer">
+          <span>Ingresar como <strong>Vendedor</strong></span>
+          <span class="text-xs bg-blue-800 px-2 py-1 rounded">Campo</span>
+        </button>
+
+        <button id="btn-abrir-login-admin" onclick="abrirModalAdminLogin()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-3.5 rounded-xl font-medium text-sm flex justify-between items-center transition shadow-sm cursor-pointer">
+          <span>Ingresar como <strong>Administrador</strong></span>
+          <span class="text-xs bg-emerald-800 px-2 py-1 rounded">Control</span>
+        </button>
+      </div>
+
+      <div class="text-center pt-2 border-t border-slate-100">
+        <button id="btn-abrir-login-root" onclick="abrirModalRootLogin()" class="text-xs text-purple-600 hover:text-purple-800 font-semibold inline-flex items-center gap-1 cursor-pointer">
+          <span>Acceso Superadministrador (Root)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA DE ACCESO NO AUTORIZADO -->
+  <div id="pantalla-acceso-no-autorizado" class="hidden max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-7 rounded-2xl border border-rose-200 w-full shadow-xl text-center space-y-5">
+      <div class="mx-auto w-16 h-16 rounded-full bg-rose-100 flex items-center justify-center">
+        <span class="text-3xl">🔒</span>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-slate-900">Acceso no autorizado</h2>
+        <p class="text-sm text-rose-600 font-semibold mt-2">Por falta de pago</p>
+        <p class="text-xs text-slate-600 mt-3 leading-relaxed">
+          El acceso a este aplicativo se encuentra temporalmente suspendido.
+          Para regularizar el servicio, contacte al proveedor.
+        </p>
+      </div>
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <p class="text-[10px] uppercase tracking-wide text-slate-500">Proveedor</p>
+        <p class="text-sm font-bold text-slate-800 mt-1">BERTIN GARCIA-GNET</p>
+      </div>
+      <button onclick="volverAlLoginDesdeBloqueo()" class="w-full bg-slate-800 hover:bg-slate-700 text-white p-3 rounded-xl font-semibold text-sm transition">
+        Volver al inicio de sesión
+      </button>
+    </div>
+  </div>
+
+  <!-- PANTALLA DE CONEXIÓN OBLIGATORIA -->
+  <div id="pantalla-conexion-obligatoria" class="hidden max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-7 rounded-2xl border border-amber-200 w-full shadow-xl text-center space-y-5">
+      <div class="mx-auto w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center"><span class="text-3xl">📡</span></div>
+      <div>
+        <h2 class="text-xl font-bold text-slate-900">Conexión a Internet requerida</h2>
+        <p id="conexion-obligatoria-mensaje" class="text-sm text-amber-700 font-semibold mt-2">Debes conectarte a Internet para continuar.</p>
+        <p class="text-xs text-slate-600 mt-3">La conexión periódica es necesaria para validar el servicio y sincronizar la información.</p>
+      </div>
+      <button onclick="reintentarConexionObligatoria()" class="w-full bg-amber-600 hover:bg-amber-500 text-white p-3 rounded-xl font-semibold text-sm">📡 Reintentar conexión</button>
+      <button onclick="volverAlLoginDesdeConexion()" class="w-full bg-slate-800 hover:bg-slate-700 text-white p-3 rounded-xl font-semibold text-sm">Volver al inicio de sesión</button>
+    </div>
+  </div>
+
+  <!-- 2. CONTENEDOR PRINCIPAL DE LA APP -->
+  <div id="pantalla-app" class="hidden max-w-md mx-auto bg-white min-h-screen flex flex-col justify-between shadow-xl">
+    
+    <!-- Header App -->
+    <header class="p-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center">
+      <div>
+        <h1 class="font-bold text-sm text-blue-600" id="txt-usuario">Usuario</h1>
+        <p class="text-xs text-slate-600" id="txt-rol">Rol</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="abrirModalSync()" id="btn-abrir-sync" title="Sincronizar con la nube" class="relative text-xs bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+          <span>🔄</span> <span>Sync</span>
+          <span id="sync-badge" class="hidden absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-[9px] font-bold w-4 h-4 rounded-full items-center justify-center">•</span>
+        </button>
+        <button onclick="alternarModoVista()" id="btn-modo-vista" class="btn-modo-vista" title="Cambiar vista">🖥️ PC</button>
+        <button onclick="cerrarSesion()" class="text-xs bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-100 font-semibold">
+          Salir
+        </button>
+      </div>
+    </header>
+
+    <!-- ACCESOS PRINCIPALES -->
+    <div id="menu-accesos" class="px-3 pt-3">
+      <div class="grid grid-cols-4 gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-sm">
+        <button onclick="cambiarVista('productos')" id="btn-nav-productos" class="flex flex-col items-center justify-center gap-1 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition text-[10px] font-semibold"><span class="text-base w-8 h-8 flex items-center justify-center rounded-full bg-blue-50">📦</span><span>Productos</span></button>
+        <button onclick="abrirVentaLibre()" id="btn-nav-vender" class="flex flex-col items-center justify-center gap-1 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition text-[10px] font-semibold"><span class="text-base w-8 h-8 flex items-center justify-center rounded-full bg-emerald-50">💰</span><span>Vender</span></button>
+        <button onclick="cambiarVista('ventas-semana')" id="btn-nav-ventas-semana" class="flex flex-col items-center justify-center gap-1 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition text-[10px] font-semibold"><span class="text-base w-8 h-8 flex items-center justify-center rounded-full bg-amber-50">📈</span><span>Ventas</span></button>
+        <button onclick="cambiarVista('vendedor-nomina')" id="btn-nav-vendedor-nomina" class="flex flex-col items-center justify-center gap-1 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition text-[10px] font-semibold"><span class="text-base w-8 h-8 flex items-center justify-center rounded-full bg-purple-50">💵</span><span>Mi Nómina</span></button>
+        <button onclick="cambiarVista('admin')" id="btn-nav-admin" class="hidden flex-col items-center justify-center gap-1 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition text-[10px] font-semibold"><span class="text-base w-8 h-8 flex items-center justify-center rounded-full bg-slate-100">⚙️</span><span>Admin</span></button>
+      </div>
+    </div>
+
+    <!-- Contenido Principal -->
+    <main class="p-4 flex-1 overflow-y-auto space-y-4">
+      
+      <!-- VISTA 1: AGENDA DE VISITAS / ENTREGAS -->
+      <section id="vista-agenda" class="space-y-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <h2 class="font-bold text-lg text-slate-900" id="agenda-titulo">📅 Agenda del Día</h2>
+            <p id="dia-actual-txt" class="text-xs text-slate-600"></p>
+          </div>
+          <span id="total-visitas" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-full font-semibold">0</span>
+        </div>
+
+        <!-- Sub-navegación de Agenda -->
+        <div id="agenda-nav-vendedor" class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold text-center border border-slate-200">
+          <button onclick="cambiarSubVistaAgenda('visitas')" id="subnav-agenda-visitas" class="py-2 rounded-lg bg-blue-600 text-white">📍 Visitas</button>
+          <button onclick="cambiarSubVistaAgenda('entregas')" id="subnav-agenda-entregas" class="py-2 rounded-lg text-slate-600">📦 Entregas</button>
+        </div>
+        <div id="agenda-nav-admin" class="hidden grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold text-center border border-slate-200">
+          <button onclick="cambiarSubVistaAgenda('visitas-totales')" id="subnav-agenda-totales" class="py-2 rounded-lg bg-blue-600 text-white">👥 Visitas totales</button>
+          <button onclick="cambiarSubVistaAgenda('mis-visitas')" id="subnav-agenda-mis" class="py-2 rounded-lg text-slate-600">📍 Mis visitas</button>
+        </div>
+
+        <div id="lista-agenda" class="space-y-3"></div>
+      </section>
+
+      <!-- VISTA 2: CLIENTES (LISTA + NUEVO) -->
+      <section id="vista-nuevo-cliente" class="hidden space-y-4">
+        <h2 class="font-bold text-lg text-slate-900">👤 Clientes</h2>
+
+        <!-- Sub-navegación Clientes -->
+        <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold text-center border border-slate-200">
+          <button onclick="cambiarSubVistaClientes('lista')" id="subnav-cli-lista" class="py-2 rounded-lg bg-blue-600 text-white">📋 Mis Clientes</button>
+          <button onclick="cambiarSubVistaClientes('nuevo')" id="subnav-cli-nuevo" class="py-2 rounded-lg text-slate-600">➕ Nuevo</button>
+        </div>
+
+        <!-- SUBVISTA: LISTA DE CLIENTES DEL VENDEDOR -->
+        <div id="subvistacli-lista" class="space-y-3">
+          <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-300">
+            <span class="text-xs text-slate-600">Total asignados:</span>
+            <span id="badge-mis-clientes" class="text-sm bg-blue-600 text-white px-3 py-0.5 rounded-full font-bold">0</span>
+          </div>
+          <div id="lista-mis-clientes" class="space-y-2"></div>
+        </div>
+
+        <!-- SUBVISTA: REGISTRAR NUEVO CLIENTE -->
+        <div id="subvistacli-nuevo" class="hidden space-y-3">
+          <form id="form-cliente" onsubmit="guardarCliente(event)" class="space-y-3">
+            <div>
+              <label class="text-xs text-slate-600 block mb-1">Nombre del Negocio / Cliente *</label>
+              <input type="text" id="cli-nombre" required placeholder="Abarrotes La Bendición" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:border-blue-500">
+            </div>
+            <div>
+              <label class="text-xs text-slate-600 block mb-1">Teléfono / WhatsApp *</label>
+              <input type="tel" id="cli-telefono" required placeholder="5512345678" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:border-blue-500">
+            </div>
+            <div>
+              <label class="text-xs text-slate-600 block mb-1">Dirección *</label>
+              <input type="text" id="cli-direccion" required placeholder="Calle, número, colonia, ciudad" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm outline-none focus:border-blue-500">
+            </div>
+
+            <div id="cli-vendedor-wrap">
+              <label class="text-xs text-slate-600 block mb-1">Asignar a Vendedor *</label>
+              <select id="cli-vendedor-select" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
+              </select>
+            </div>
+
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-xs font-semibold text-slate-700">Ubicación GPS</span>
+                <button type="button" onclick="obtenerGPS()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg">📍 Capturar GPS</button>
+              </div>
+              <input type="text" id="cli-gps" readonly placeholder="Coordenadas no capturadas" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-emerald-600 font-mono">
+            </div>
+            <div>
+              <label class="text-xs text-slate-600 block mb-1">Días de Visita Programada *</label>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Lunes" class="accent-blue-500"> <span>Lunes</span></label>
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Martes" class="accent-blue-500"> <span>Martes</span></label>
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Miércoles" class="accent-blue-500"> <span>Miércoles</span></label>
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Jueves" class="accent-blue-500"> <span>Jueves</span></label>
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Viernes" class="accent-blue-500"> <span>Viernes</span></label>
+                <label class="bg-slate-50 border border-slate-300 p-2 rounded-xl flex items-center space-x-2"><input type="checkbox" name="dias" value="Sábado" class="accent-blue-500"> <span>Sábado</span></label>
+              </div>
+            </div>
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">💾 Guardar Cliente</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- VISTA 3: PRODUCTOS (VENDEDOR Y ADMINISTRADOR) -->
+      <section id="vista-productos" class="hidden space-y-4">
+        <h2 class="font-bold text-lg text-slate-900">📦 Productos</h2>
+
+        <!-- Sub-navegación de Productos -->
+        <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold text-center border border-slate-200">
+          <button onclick="cambiarSubVistaProductos('nuevo')" id="subnavprod-nuevo" class="py-2 rounded-lg text-slate-600">➕ Nuevo</button>
+          <button onclick="cambiarSubVistaProductos('modificar')" id="subnavprod-modificar" class="py-2 rounded-lg text-slate-600">✏️ Modificar</button>
+          <button onclick="cambiarSubVistaProductos('inventario')" id="subnavprod-inventario" class="py-2 rounded-lg bg-blue-600 text-white">📋 Inventario</button>
+        </div>
+
+        <!-- SUBVISTA: PRODUCTO NUEVO -->
+        <div id="subvistaprod-nuevo" class="hidden space-y-3">
+          <form id="form-producto-nuevo" onsubmit="guardarProductoNuevo(event)" class="bg-slate-50 p-4 rounded-xl border border-blue-200 space-y-3 shadow-lg">
+            <div class="border-b border-slate-200 pb-2">
+              <h3 class="font-bold text-sm text-blue-600">➕ Registrar Producto Nuevo</h3>
+            </div>
+            <div id="campos-pn" class="space-y-3"></div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-xs font-semibold p-2.5 rounded-lg transition text-white shadow">💾 Guardar Producto</button>
+          </form>
+        </div>
+
+        <!-- SUBVISTA: MODIFICAR PRODUCTO -->
+        <div id="subvistaprod-modificar" class="hidden space-y-3">
+          <div class="bg-slate-50 p-4 rounded-xl border border-amber-200 space-y-3 shadow-lg">
+            <div class="border-b border-slate-200 pb-2">
+              <h3 class="font-bold text-sm text-amber-600">✏️ Buscar Producto a Modificar</h3>
+            </div>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Código de barras o nombre</label>
+              <div class="flex gap-2">
+                <input type="text" id="pm-buscar" placeholder="Escribe o escanea el código" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarProductoModificar();}" class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-amber-500">
+                <button type="button" onclick="escanearBusquedaModificar()" title="Escanear con la cámara" class="bg-white hover:bg-slate-200 border border-slate-300 px-3 rounded-lg text-sm">📷</button>
+                <button type="button" onclick="buscarProductoModificar()" class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 rounded-lg">Buscar</button>
+              </div>
+            </div>
+            <div id="pm-resultados" class="space-y-2"></div>
+          </div>
+
+          <!-- Formulario de edición -->
+          <form id="form-producto-mod" onsubmit="guardarProductoModificado(event)" class="hidden bg-slate-50 p-4 rounded-xl border border-blue-200 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+              <h3 class="font-bold text-sm text-blue-600">Detalles del Producto</h3>
+              <button type="button" onclick="cancelarEdicionProducto()" class="text-[11px] text-slate-600 hover:text-slate-900">✕ Cerrar</button>
+            </div>
+            <div id="campos-pm" class="space-y-3"></div>
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-xs font-semibold p-2.5 rounded-lg transition text-white shadow">💾 Guardar Cambios</button>
+              <button type="button" onclick="eliminarProducto()" class="bg-rose-600/20 hover:bg-rose-600/40 border border-rose-300 text-rose-700 text-xs font-semibold p-2.5 rounded-lg transition">🗑️ Eliminar Producto</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- SUBVISTA: INVENTARIO -->
+        <div id="subvistaprod-inventario" class="space-y-3">
+          <div class="grid grid-cols-3 gap-2">
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-300">
+              <p class="text-[10px] text-slate-600 font-semibold">Productos</p>
+              <p id="inv-total" class="text-base font-bold text-blue-600 mt-0.5">0</p>
+            </div>
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-amber-200">
+              <p class="text-[10px] text-slate-600 font-semibold">Bajo mínimo</p>
+              <p id="inv-bajos" class="text-base font-bold text-amber-600 mt-0.5">0</p>
+            </div>
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-emerald-200">
+              <p class="text-[10px] text-slate-600 font-semibold">Valor a costo</p>
+              <p id="inv-valor" class="text-sm font-bold text-emerald-600 mt-1">$0.00</p>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 space-y-2">
+            <div class="flex gap-2">
+              <input type="text" id="inv-buscar" oninput="renderizarInventario()" placeholder="Buscar por código o nombre" class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-blue-500">
+              <button type="button" onclick="escanearBusquedaInventario()" title="Escanear con la cámara" class="bg-white hover:bg-slate-200 border border-slate-300 px-3 rounded-lg text-sm">📷</button>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <label class="flex items-center gap-2 text-[11px] text-slate-700">
+                <input type="checkbox" id="inv-solo-bajos" onchange="renderizarInventario()" class="accent-amber-500">
+                <span>Solo bajo mínimo / agotados</span>
+              </label>
+              <button type="button" onclick="exportarInventarioExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold px-3 py-1.5 rounded-lg transition">📥 Exportar a Excel</button>
+            </div>
+          </div>
+
+          <div id="lista-inventario" class="space-y-2"></div>
+        </div>
+      </section>
+
+      <!-- VISTA 4: NÓMINA DEL VENDEDOR (EXCLUSIVO VENDEDOR) -->
+      <section id="vista-vendedor-nomina" class="hidden space-y-4">
+        <h2 class="font-bold text-lg text-slate-900">💵 Mis Recibos de Nómina</h2>
+        <div id="lista-nominas-vendedor" class="space-y-3"></div>
+      </section>
+
+      <!-- VISTA 5: PANEL DE ADMINISTRACIÓN COMPLETO (EXCLUSIVO ADMIN) -->
+      <section id="vista-admin" class="hidden space-y-5">
+        <div class="bg-slate-50 p-4 rounded-xl border border-emerald-200 space-y-1 shadow-lg">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-emerald-600">🟢 Administrador Activo</span>
+            <span id="adm-negocio-tag" class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200 font-bold"></span>
+          </div>
+          <h3 id="adm-nombre-txt" class="text-base font-bold text-slate-900"></h3>
+        </div>
+
+        <div class="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold text-center border border-slate-200">
+          <button onclick="cambiarSubVistaAdmin('vendedores')" id="subnav-vendedores" class="py-2 rounded-lg bg-emerald-600 text-white">Vendedores</button>
+          <button onclick="cambiarSubVistaAdmin('reportes')" id="subnav-reportes" class="py-2 rounded-lg text-slate-600">Reportes</button>
+          <button onclick="cambiarSubVistaAdmin('clientes')" id="subnav-clientes" class="py-2 rounded-lg text-slate-600">Clientes</button>
+          <button onclick="cambiarSubVistaAdmin('nomina')" id="subnav-nomina" class="py-2 rounded-lg text-slate-600">Nómina</button>
+        </div>
+
+        <div id="subvista-vendedores" class="space-y-4">
+          <form id="form-vendedor" onsubmit="guardarVendedor(event)" class="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+            <h3 class="font-bold text-xs text-emerald-600 uppercase tracking-wider">➕ Dar de Alta Nuevo Vendedor</h3>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Nombre Completo *</label>
+              <input type="text" id="vend-nombre" required placeholder="Ej. Roberto Gómez" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Teléfono *</label>
+              <input type="tel" id="vend-telefono" required placeholder="5511223344" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] text-slate-600 block mb-1">Usuario *</label>
+                <input type="text" id="vend-usuario" required placeholder="roberto_v" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500">
+              </div>
+              <div>
+                <label class="text-[11px] text-slate-600 block mb-1">Contraseña *</label>
+                <input type="password" id="vend-pass" required placeholder="••••••••" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500">
+              </div>
+            </div>
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-xs font-bold p-2.5 rounded-lg text-white transition">Registrar Vendedor</button>
+          </form>
+
+          <div class="space-y-2">
+            <h4 class="text-xs font-bold text-slate-600 uppercase tracking-wider">Vendedores Registrados</h4>
+            <div id="lista-vendedores" class="space-y-2"></div>
+          </div>
+        </div>
+
+        <div id="subvista-reportes" class="hidden space-y-4">
+          <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-300">
+            <span class="text-xs font-semibold text-slate-700">Periodo:</span>
+            <select id="filtro-periodo" onchange="renderizarReporteVentas()" class="bg-slate-100 text-xs text-emerald-600 font-bold border border-slate-300 rounded-lg p-1.5 outline-none">
+              <option value="diaria">Hoy (Diaria)</option>
+              <option value="semanal">Esta Semana</option>
+              <option value="mensual" selected>Este Mes</option>
+              <option value="anual">Este Año</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-50 p-3 rounded-xl border border-blue-200">
+              <p class="text-[10px] text-slate-600 font-semibold uppercase">Ventas Totales</p>
+              <p id="monto-ventas" class="text-lg font-bold text-blue-600 mt-1">$0.00</p>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-xl border border-emerald-200">
+              <p class="text-[10px] text-slate-600 font-semibold uppercase">Utilidad Neta Real</p>
+              <p id="monto-utilidad" class="text-lg font-bold text-emerald-600 mt-1">$0.00</p>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-300 space-y-2 text-xs">
+            <div class="flex justify-between text-slate-600">
+              <span>Costo de Venta Total:</span>
+              <span id="monto-costo" class="font-mono text-slate-800">$0.00</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>(-) Nóminas Pagadas/Enviadas:</span>
+              <span id="monto-nominas-descuento" class="font-mono text-amber-600">$0.00</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>(-) Otros Gastos Operativos:</span>
+              <span id="monto-gastos-descuento" class="font-mono text-rose-600">$0.00</span>
+            </div>
+            <div class="flex justify-between text-slate-600 border-t border-slate-200 pt-2">
+              <span>Total Pedidos Realizados:</span>
+              <span id="cant-pedidos" class="font-semibold text-slate-800">0</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3.5 rounded-xl border border-emerald-200 space-y-2">
+            <div class="flex justify-between items-center gap-2">
+              <div><h4 class="text-xs font-bold text-emerald-700">📊 Ventas por vendedor</h4><p class="text-[10px] text-slate-500">Actualización automática</p></div>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full font-bold">● En vivo</span>
+            </div>
+            <div id="ventas-vendedores-tiempo-real" class="space-y-2"></div>
+          </div>
+          <button onclick="exportarReporteVentasExcel()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-2.5 rounded-xl text-xs transition">📥 Exportar reporte de ventas a Excel</button>
+
+          <div class="bg-slate-50 p-3.5 rounded-xl border border-blue-200 space-y-2">
+            <div class="flex justify-between items-center">
+              <div><h4 class="text-xs font-bold text-blue-700">👥 Reporte semanal de clientes</h4><p class="text-[10px] text-slate-500">Clientes asignados al administrador actual</p></div>
+              <button onclick="renderizarReporteSemanalClientes()" class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg">↻ Actualizar</button>
+            </div>
+            <div id="resumen-clientes-semana" class="grid grid-cols-2 gap-2"></div>
+            <div id="lista-clientes-semana" class="space-y-2"></div>
+          </div>
+
+          <div class="bg-slate-50 p-4 rounded-xl border border-rose-200 space-y-3">
+            <h3 class="font-bold text-xs text-rose-600 uppercase tracking-wider">💸 Registrar Gastos Adicionales</h3>
+            <form id="form-gasto" onsubmit="guardarGasto(event)" class="space-y-2">
+              <div>
+                <input type="text" id="gasto-concepto" required placeholder="Concepto (Renta, Gasolina, Luz, etc.)" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-rose-500">
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <input type="number" id="gasto-monto" step="0.01" required placeholder="Monto ($)" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-rose-500">
+                <select id="gasto-categoria" class="bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none">
+                  <option value="Operativo">Operativo</option>
+                  <option value="Administrativo">Administrativo</option>
+                  <option value="Servicios">Servicios</option>
+                  <option value="Otros">Otros</option>
+                </select>
+              </div>
+              <button type="submit" class="w-full bg-rose-600 hover:bg-rose-500 text-xs font-bold p-2 rounded-lg text-white transition">➕ Agregar Gasto</button>
+            </form>
+
+            <div class="pt-2 border-t border-slate-200">
+              <h4 class="text-[11px] font-bold text-slate-600 mb-2">Historial de Gastos</h4>
+              <div id="lista-gastos-admin" class="space-y-2 max-h-40 overflow-y-auto"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="subvista-clientes" class="hidden space-y-4">
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-600">Total de Clientes:</span>
+              <span id="badge-total-clientes" class="text-sm bg-blue-600 text-white px-3 py-0.5 rounded-full font-bold">0</span>
+            </div>
+
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Filtrar cartera por Vendedor:</label>
+              <select id="filtro-cliente-vendedor" onchange="renderizarClientesAdmin()" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none">
+              </select>
+            </div>
+          </div>
+
+          <div id="lista-clientes-admin" class="space-y-2"></div>
+        </div>
+
+        <div id="subvista-nomina" class="hidden space-y-4">
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+            <h3 class="font-bold text-xs text-emerald-600 uppercase tracking-wider">🧮 Generador de Nómina</h3>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Seleccionar Vendedor *</label>
+              <select id="nomina-vendedor-select" onchange="calcularNomina()" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none">
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] text-slate-600 block mb-1">Sueldo Base ($)</label>
+                <input type="number" id="nom-sueldo-base" oninput="calcularNomina()" value="1500" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none">
+              </div>
+              <div>
+                <label class="text-[11px] text-slate-600 block mb-1">% Comisión Ventas</label>
+                <input type="number" id="nom-comision-pct" oninput="calcularNomina()" value="5" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none">
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-4 rounded-xl border border-emerald-300 space-y-3 text-xs">
+            <h4 class="font-bold text-slate-800 border-b border-slate-200 pb-2">Desglose de Pago</h4>
+            <div class="flex justify-between text-slate-600">
+              <span>Ventas del Vendedor (Mes):</span>
+              <span id="nom-ventas-vendedor" class="font-mono text-slate-800">$0.00</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>Comisión Generada:</span>
+              <span id="nom-monto-comision" class="font-mono text-emerald-600">$0.00</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>Sueldo Base:</span>
+              <span id="nom-monto-base" class="font-mono text-slate-800">$0.00</span>
+            </div>
+            <div class="flex justify-between text-sm font-bold text-emerald-600 border-t border-slate-200 pt-2">
+              <span>Pago Total Nómina:</span>
+              <span id="nom-pago-total">$0.00</span>
+            </div>
+
+            <button onclick="enviarNominaAVendedor()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-2.5 rounded-xl text-xs transition shadow-lg mt-2 flex items-center justify-center gap-2">
+              <span>📤 Enviar Nómina al Vendedor</span>
+            </button>
+          </div>
+
+          <div class="space-y-2 pt-2">
+            <h4 class="text-xs font-bold text-slate-600 uppercase tracking-wider">Historial de Nóminas Enviadas</h4>
+            <div id="lista-nominas-enviadas-admin" class="space-y-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA 5: VENTAS DE LA SEMANA -->
+      <section id="vista-ventas-semana" class="hidden space-y-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <h2 class="font-bold text-lg text-slate-900">📈 Ventas de la semana</h2>
+            <p id="ventas-semana-rango" class="text-[11px] text-slate-600"></p>
+          </div>
+          <span id="ventas-semana-total" class="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-full font-semibold">$0.00</span>
+        </div>
+        <div id="lista-ventas-semana" class="space-y-2"></div>
+      </section>
+
+    </main>
+
+    <!-- NAV INFERIOR: navegación principal -->
+    <nav class="bg-white border-t border-slate-200 flex justify-around p-2 text-xs shadow-[0_-2px_8px_rgba(15,23,42,0.05)]">
+      <button onclick="cambiarVista('agenda')" id="btn-nav-agenda" class="flex flex-col items-center text-blue-600 px-6 py-1 rounded-xl"><span class="text-base">📅</span><span>Agenda</span></button>
+      <button onclick="cambiarVista('nuevo-cliente')" id="btn-nav-cliente" class="flex flex-col items-center text-slate-600 px-6 py-1 rounded-xl"><span class="text-base">👤</span><span>Clientes</span></button>
+    </nav>
+    <div class="text-center py-2 text-[9px] text-slate-400">Desarrollado por <strong>BERTIN GARCIA-GNET</strong></div>
+
+  </div>
+
+  <!-- MODALES DE LOGIN -->
+  <!-- MODAL: ACCESO VENDEDOR -->
+  <div id="modal-vendedor-login" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-200 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalVendedorLogin()" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900">✕</button>
+      <div class="text-center space-y-1">
+        <div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">💼</div>
+        <h3 class="text-lg font-bold text-blue-600">Acceso Vendedor</h3>
+        <p class="text-xs text-slate-500">Ingresa tus credenciales de campo</p>
+      </div>
+      <form onsubmit="autenticarVendedor(event)" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Usuario o Correo</label>
+          <input type="text" id="login-vend-user" required value="juan" placeholder="vendedor@ejemplo.com o juan" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Contraseña</label>
+          <input type="password" id="login-vend-pass" required value="123" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
+        </div>
+        <div class="bg-blue-50/70 p-2 rounded-lg border border-blue-100 text-[11px] text-blue-700 flex justify-between items-center">
+          <span>Demo pre-cargado: <strong>juan</strong> / <strong>123</strong></span>
+          <button type="button" onclick="document.getElementById('login-vend-user').value='juan';document.getElementById('login-vend-pass').value='123';" class="underline text-[10px] font-bold">Llenar</button>
+        </div>
+        <button type="submit" id="btn-login-vendedor" class="w-full bg-blue-600 hover:bg-blue-500 font-semibold p-2.5 rounded-xl text-xs text-white transition shadow-sm">Ingresar al Sistema</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ACCESO ADMINISTRADOR -->
+  <div id="modal-admin-login" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white border border-emerald-200 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalAdminLogin()" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900">✕</button>
+      <div class="text-center space-y-1">
+        <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">⚙️</div>
+        <h3 class="text-lg font-bold text-emerald-700">Acceso Administrador</h3>
+        <p class="text-xs text-slate-500">Ingresa tus credenciales asignadas</p>
+      </div>
+      <form onsubmit="autenticarAdmin(event)" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Usuario Administrador o Correo</label>
+          <input type="text" id="login-adm-user" required value="admin@ejemplo.com" placeholder="admin@ejemplo.com" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Contraseña</label>
+          <input type="password" id="login-adm-pass" required value="123456" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+        </div>
+        <div class="bg-emerald-50/70 p-2 rounded-lg border border-emerald-100 text-[11px] text-emerald-700 flex justify-between items-center">
+          <span>Demo pre-cargado: <strong>admin@ejemplo.com</strong> / <strong>123456</strong></span>
+          <button type="button" onclick="document.getElementById('login-adm-user').value='admin@ejemplo.com';document.getElementById('login-adm-pass').value='123456';" class="underline text-[10px] font-bold">Llenar</button>
+        </div>
+        <button type="submit" id="btn-login-admin" class="w-full bg-emerald-600 hover:bg-emerald-500 font-semibold p-2.5 rounded-xl text-xs text-white transition shadow-sm">Iniciar Sesión</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ACCESO SUPERADMINISTRADOR (ROOT) -->
+  <div id="modal-root-login" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white border border-purple-200 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalRootLogin()" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900">✕</button>
+      <div class="text-center space-y-1">
+        <div class="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🛡️</div>
+        <h3 class="text-lg font-bold text-purple-700">Acceso Superadministrador</h3>
+        <p class="text-xs text-slate-500">Panel Central ROOT (BERTIN GARCIA-GNET)</p>
+      </div>
+      <form onsubmit="autenticarRoot(event)" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Usuario Root o Correo</label>
+          <input type="text" id="root-user" required value="GNET" placeholder="root@ejemplo.com o GNET" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-purple-500">
+        </div>
+        <div>
+          <label class="text-xs text-slate-600 block mb-1">Contraseña Root</label>
+          <input type="password" id="root-pass" required value="123456" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-purple-500">
+        </div>
+        <div class="bg-purple-50/70 p-2 rounded-lg border border-purple-100 text-[11px] text-purple-700 flex justify-between items-center">
+          <span>Clave Root: <strong>GNET</strong> / <strong>123456</strong></span>
+          <button type="button" onclick="document.getElementById('root-user').value='GNET';document.getElementById('root-pass').value='123456';" class="underline text-[10px] font-bold">Llenar</button>
+        </div>
+        <button type="submit" id="btn-login-root" class="w-full bg-purple-600 hover:bg-purple-500 font-semibold p-2.5 rounded-xl text-xs text-white transition shadow-sm">Ingresar al Panel Root</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- PANTALLA COMPLETA PANEL SUPERADMINISTRADOR (ROOT) -->
+  <div id="pantalla-superadmin" class="hidden fixed inset-0 bg-slate-100 z-50 overflow-y-auto">
+    <div class="max-w-xl mx-auto min-h-screen p-4 flex flex-col justify-between space-y-6">
+      <header class="flex justify-between items-center border-b border-purple-900/50 pb-4">
+        <div>
+          <h2 class="font-bold text-sm text-purple-700">Panel Superadministrador</h2>
+          <p class="text-[10px] text-purple-600/70 font-mono">ROOT SESSION ACTIVE (GNET)</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="alternarModoVista()" id="btn-modo-vista-root" class="btn-modo-vista">🖥️ PC</button>
+          <button onclick="salirSuperadmin()" class="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-100 font-semibold">Cerrar Sesión Root</button>
+        </div>
+      </header>
+      <main class="space-y-6 flex-1">
+        <div class="bg-slate-50 border border-purple-200 p-5 rounded-2xl shadow-xl space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-base text-purple-700">👤 Crear Nuevo Usuario en Firebase</h3>
+            <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full border border-emerald-200">🔥 Firebase</span>
+          </div>
+          <form id="form-crear-admin" onsubmit="guardarNuevoAdmin(event)" class="space-y-3">
+            <div>
+              <label class="text-[11px] font-bold text-slate-700 block mb-1">Seleccionar Rol *</label>
+              <select id="adm-rol" onchange="alternarCamposRolRoot()" class="w-full bg-white border-2 border-purple-300 font-bold rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-purple-600 transition">
+                <option value="admin">👑 Administrador (Acceso solo al Panel Admin y Gestión)</option>
+                <option value="vendedor">💼 Vendedor (Acceso solo a Ventas de Campo y Clientes)</option>
+              </select>
+            </div>
+
+            <div id="wrap-asignar-admin-root" class="hidden bg-purple-50/60 p-3 rounded-xl border border-purple-200 space-y-1">
+              <label class="text-[11px] font-bold text-purple-800 block">🏢 Asignar a Administrador / Negocio *</label>
+              <select id="adm-vendedor-asignado" onchange="actualizarNegocioDesdeAdminAsignado()" class="w-full bg-white border border-purple-300 font-semibold rounded-xl p-2 text-xs text-slate-900 focus:outline-none focus:border-purple-500">
+                <!-- Se pobla dinámicamente con los administradores existentes -->
+              </select>
+              <p class="text-[10px] text-purple-700">🔒 Este vendedor solo aparecerá en la cuenta del administrador seleccionado y solo descargará sus productos.</p>
+            </div>
+
+            <div>
+              <label class="text-[11px] font-bold text-slate-700 block mb-1">Nombre Completo *</label>
+              <input type="text" id="adm-nombre" required placeholder="Ej: Carlos Ramírez" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Negocio / Sucursal *</label>
+                <input type="text" id="adm-negocio" required placeholder="Ej: Distribuidora Central" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Teléfono *</label>
+                <input type="tel" id="adm-telefono" required placeholder="Ej: 5512345678" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+              </div>
+            </div>
+
+            <div>
+              <label class="text-[11px] font-bold text-slate-700 block mb-1">Dirección</label>
+              <input type="text" id="adm-direccion" placeholder="Calle, Número, Colonia" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+            </div>
+
+            <div id="wrap-campos-admin" class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Día de Pago Mensual</label>
+                <select id="adm-dia-pago" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white">
+                  <option value="1">Día 1 de cada mes</option>
+                  <option value="5">Día 5 de cada mes</option>
+                  <option value="10">Día 10 de cada mes</option>
+                  <option value="15">Día 15 de cada mes</option>
+                  <option value="20">Día 20 de cada mes</option>
+                  <option value="25">Día 25 de cada mes</option>
+                  <option value="30">Día 30 de cada mes</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Último Pago</label>
+                <input type="date" id="adm-ultimo-pago" title="Último pago realizado" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Usuario o Correo *</label>
+                <input type="text" id="adm-usuario" required placeholder="usuario o correo" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-700 block mb-1">Contraseña (mín 6) *</label>
+                <input type="password" id="adm-password" required placeholder="••••••••" minlength="6" class="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-purple-400">
+              </div>
+            </div>
+
+            <button type="submit" id="btn-submit-root-user" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold p-3 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2">
+              <span>➕ Guardar y Registrar en Firebase</span>
+            </button>
+          </form>
+        </div>
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <h4 class="text-xs font-bold text-slate-700 uppercase">Usuarios Registrados en Firebase</h4>
+              <p class="text-[10px] text-slate-500 mt-0.5">Control de acceso estricto por rol asignado</p>
+            </div>
+            <div class="flex gap-1">
+              <button type="button" onclick="filtrarUsuariosRoot('todos')" id="btn-filtro-root-todos" class="text-[10px] px-2.5 py-1 rounded-lg font-bold bg-purple-600 text-white shadow-xs">Todos</button>
+              <button type="button" onclick="filtrarUsuariosRoot('admin')" id="btn-filtro-root-admin" class="text-[10px] px-2.5 py-1 rounded-lg font-bold bg-slate-200 text-slate-700 hover:bg-slate-300">👑 Admins</button>
+              <button type="button" onclick="filtrarUsuariosRoot('vendedor')" id="btn-filtro-root-vendedor" class="text-[10px] px-2.5 py-1 rounded-lg font-bold bg-slate-200 text-slate-700 hover:bg-slate-300">💼 Vendedores</button>
+            </div>
+          </div>
+          <div id="lista-admins" class="space-y-2"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL: ELEGIR TIPO DE OPERACIÓN (PEDIDO / VENTA) -->
+  <div id="modal-tipo-operacion" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-200 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative space-y-4">
+      <button onclick="cerrarOpcionesPedido()" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900">✕</button>
+      <div class="text-center space-y-1">
+        <h3 class="text-lg font-bold text-blue-600">¿Qué deseas hacer?</h3>
+        <p id="tipo-op-cliente" class="text-xs text-slate-600"></p>
+      </div>
+      <div class="space-y-3">
+        <button onclick="iniciarOperacion('pedido')" class="w-full bg-blue-600 hover:bg-blue-500 p-3 rounded-xl text-left transition">
+          <p class="font-semibold text-sm text-white">📝 Tomar Pedido</p>
+          <p class="text-[11px] text-blue-100/80">Se agenda la entrega para otra fecha</p>
+        </button>
+        <button onclick="iniciarOperacion('venta')" class="w-full bg-emerald-600 hover:bg-emerald-500 p-3 rounded-xl text-left transition">
+          <p class="font-semibold text-sm text-white">💰 Venta</p>
+          <p class="text-[11px] text-emerald-100/80">Venta al momento; descuenta del inventario</p>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA COMPLETA: TOMAR PEDIDO / VENTA -->
+  <div id="pantalla-operacion" class="hidden fixed inset-0 bg-slate-50 z-40">
+    <div class="max-w-md mx-auto h-full flex flex-col bg-white">
+
+      <header class="p-3 bg-slate-100 border-b border-slate-300 flex justify-between items-center gap-2">
+        <div class="min-w-0">
+          <h2 id="op-titulo" class="font-bold text-sm text-blue-600">Tomar Pedido</h2>
+          <p id="op-cliente" class="text-[11px] text-slate-600 truncate"></p>
+        </div>
+        <button onclick="cerrarOperacion()" class="shrink-0 text-xs bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-100">Cancelar</button>
+      </header>
+
+      <div class="flex-1 overflow-y-auto p-3 space-y-3">
+
+        <!-- PASO 1: PRODUCTOS / CARRITO -->
+        <div id="op-paso-carrito" class="space-y-3">
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 space-y-2">
+            <div class="flex gap-2">
+              <input type="text" id="op-buscar" oninput="renderCatalogoOp()" onkeydown="enterBusquedaOp(event)" placeholder="Buscar por nombre o código" autocomplete="off" class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
+              <button type="button" onclick="escanearParaCarrito()" title="Escanear con la cámara" class="bg-white hover:bg-slate-200 border border-slate-300 px-3 rounded-lg text-sm">📷</button>
+            </div>
+            <div id="op-catalogo" class="space-y-1.5 max-h-52 overflow-y-auto"></div>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <h3 class="font-bold text-xs text-slate-700">🛒 Carrito</h3>
+              <span id="op-items-count" class="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-semibold">0 productos</span>
+            </div>
+            <div id="op-carrito" class="space-y-2"></div>
+          </div>
+
+          <!-- Cobro (solo Venta) -->
+          <div id="op-pago" class="hidden bg-slate-50 p-3 rounded-xl border border-emerald-200 space-y-3">
+            <h3 class="font-bold text-xs text-emerald-600">💵 Forma de pago</h3>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Método de pago *</label>
+              <select id="op-metodo-pago" onchange="actualizarCamposPago()" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+                <option value="efectivo">Efectivo</option>
+                <option value="credito">Crédito</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="mixto">Mixto</option>
+              </select>
+            </div>
+            <div id="pago-efectivo-wrap">
+              <label class="text-[11px] text-slate-600 block mb-1">Efectivo recibido ($)</label>
+              <input type="number" id="op-efectivo" min="0" step="0.01" oninput="actualizarCambio(); actualizarResumenPago()" placeholder="0.00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+            <div id="pago-transferencia-wrap" class="hidden">
+              <label class="text-[11px] text-slate-600 block mb-1">Monto por transferencia ($)</label>
+              <input type="number" id="op-transferencia" min="0" step="0.01" oninput="actualizarCambio(); actualizarResumenPago()" placeholder="0.00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+            <div id="pago-mixto-wrap" class="hidden space-y-2 border-t border-slate-200 pt-2">
+              <p class="text-[10px] font-semibold text-emerald-600">Pago mixto: selecciona cualquier combinación de métodos</p>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="text-[10px] text-slate-600 block mb-1">Método 1</label><select id="op-mixto-1-metodo" onchange="actualizarCambio(); actualizarResumenPago()" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500"><option value="efectivo">Efectivo</option><option value="credito">Crédito</option><option value="transferencia">Transferencia</option></select></div>
+                <div><label class="text-[10px] text-slate-600 block mb-1">Monto 1 ($)</label><input type="number" id="op-mixto-1-monto" min="0" step="0.01" oninput="actualizarCambio(); actualizarResumenPago()" placeholder="0.00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500"></div>
+                <div><label class="text-[10px] text-slate-600 block mb-1">Método 2</label><select id="op-mixto-2-metodo" onchange="actualizarCambio(); actualizarResumenPago()" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500"><option value="efectivo">Efectivo</option><option value="credito">Crédito</option><option value="transferencia">Transferencia</option></select></div>
+                <div><label class="text-[10px] text-slate-600 block mb-1">Monto 2 ($)</label><input type="number" id="op-mixto-2-monto" min="0" step="0.01" oninput="actualizarCambio(); actualizarResumenPago()" placeholder="0.00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 outline-none focus:border-emerald-500"></div>
+              </div>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-600">Cambio:</span>
+              <span id="op-cambio" class="font-mono font-bold text-slate-800">—</span>
+            </div>
+            <div id="op-resumen-pago" class="text-[10px] text-slate-500 border-t border-slate-200 pt-2"></div>
+            <div>
+              <label class="text-[11px] text-slate-600 block mb-1">Anotaciones de la venta <span class="text-slate-500">(opcional)</span></label>
+              <textarea id="op-anotaciones-venta" rows="2" placeholder="Ej. Cliente pidió entrega, abonó una parte, etc." class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- PASO 2: FECHA DE ENTREGA (solo Pedido) -->
+        <div id="op-paso-entrega" class="hidden space-y-3">
+          <div class="bg-slate-50 p-3 rounded-xl border border-blue-200 space-y-3">
+            <h3 class="font-bold text-xs text-blue-600">📅 Agendar entrega del pedido</h3>
+            <div class="flex items-center justify-between">
+              <button type="button" id="cal-prev" onclick="cambiarMesCal(-1)" class="w-9 h-9 rounded-lg bg-white border border-slate-300 text-slate-800 disabled:opacity-30">‹</button>
+              <span id="cal-titulo" class="text-sm font-semibold text-slate-900"></span>
+              <button type="button" onclick="cambiarMesCal(1)" class="w-9 h-9 rounded-lg bg-white border border-slate-300 text-slate-800">›</button>
+            </div>
+            <div class="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-500 font-semibold">
+              <span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span>
+            </div>
+            <div id="cal-dias" class="grid grid-cols-7 gap-1"></div>
+            <p id="cal-seleccion" class="text-xs text-center text-slate-600"></p>
+          </div>
+
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 space-y-2">
+            <label class="text-[11px] text-slate-600 block">Notas para la entrega <span class="text-slate-500">(opcional)</span></label>
+            <textarea id="op-notas" rows="2" placeholder="Ej. Entregar por la tarde, dejar con el encargado…" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500"></textarea>
+          </div>
+
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 text-xs flex justify-between">
+            <span class="text-slate-600">Resumen del pedido:</span>
+            <span id="op-resumen-entrega" class="text-slate-800 font-semibold"></span>
+          </div>
+        </div>
+      </div>
+
+      <footer class="p-3 bg-slate-100 border-t border-slate-300 space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-slate-600">Total</span>
+          <span id="op-total" class="text-lg font-bold text-emerald-600 font-mono">$0.00</span>
+        </div>
+        <button id="op-btn-continuar" onclick="continuarAEntrega()" class="hidden w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold p-3 rounded-xl text-sm transition">Continuar: elegir fecha de entrega</button>
+        <button id="op-btn-cobrar" onclick="finalizarVenta()" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">💰 Cobrar y finalizar venta</button>
+        <div id="op-fila-entrega" class="hidden grid grid-cols-3 gap-2">
+          <button onclick="mostrarPasoOperacion('carrito')" class="bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm transition">Volver</button>
+          <button onclick="finalizarPedido()" class="col-span-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold p-3 rounded-xl text-sm transition">✅ Finalizar pedido</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- MODAL: INICIAR VENTA -->
+  <div id="modal-venta-libre" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+    <div class="bg-white border border-emerald-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center">
+        <div>
+          <h3 class="text-lg font-bold text-emerald-700">💰 Nueva venta</h3>
+          <p class="text-[11px] text-slate-600">Puedes vender aunque hoy no sea día de visita.</p>
+        </div>
+        <button onclick="cerrarVentaLibre()" class="text-slate-600 hover:text-slate-900">✕</button>
+      </div>
+      <div>
+        <label class="text-[11px] text-slate-600 block mb-1">Asignar cliente a esta venta <span class="text-slate-500">(opcional)</span></label>
+        <select id="venta-libre-cliente" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+          <option value="">Sin cliente / Venta mostrador</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="cerrarVentaLibre()" class="bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-2.5 rounded-lg text-xs">Cancelar</button>
+        <button onclick="iniciarVentaLibreSeleccionada()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-2.5 rounded-lg text-xs">Continuar →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ¿ENVIAR POR WHATSAPP? -->
+  <div id="modal-whatsapp" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+    <div class="bg-white border border-emerald-300 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="text-center space-y-1">
+        <p class="text-3xl">✅</p>
+        <h3 id="wa-titulo" class="text-lg font-bold text-emerald-700"></h3>
+        <p id="wa-resumen" class="text-xs text-slate-600"></p>
+      </div>
+      <p class="text-sm text-center text-slate-800">¿Quieres enviar los detalles por WhatsApp al cliente?</p>
+      <div class="space-y-2">
+        <button onclick="enviarPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">📲 Sí, enviar por WhatsApp</button>
+        <button onclick="cerrarModalWhatsApp()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm transition">No, terminar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AVISO FLOTANTE -->
+  <div id="toast" class="hidden"></div>
+
+  <!-- MODAL: ACTUALIZAR CLIENTE -->
+  <div id="modal-actualizar-cliente" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[75] flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center"><h3 class="text-sm font-bold text-blue-600">✏️ Actualizar datos del cliente</h3><button onclick="cerrarModalCliente()" class="text-slate-600">✕</button></div>
+      <input id="edit-cli-nombre" type="text" placeholder="Nombre del cliente" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="edit-cli-telefono" type="tel" placeholder="Teléfono / WhatsApp" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="edit-cli-direccion" type="text" placeholder="Dirección" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="edit-cli-gps" type="text" placeholder="GPS (lat, lng)" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <div>
+        <label class="text-[10px] text-slate-600 block mb-1">Días de visita programada *</label>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Lunes" class="accent-blue-500"> <span>Lunes</span></label>
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Martes" class="accent-blue-500"> <span>Martes</span></label>
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Miércoles" class="accent-blue-500"> <span>Miércoles</span></label>
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Jueves" class="accent-blue-500"> <span>Jueves</span></label>
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Viernes" class="accent-blue-500"> <span>Viernes</span></label>
+          <label class="bg-slate-100 border border-slate-200 p-2 rounded-xl flex items-center gap-2 cursor-pointer"><input type="checkbox" name="edit-dias" value="Sábado" class="accent-blue-500"> <span>Sábado</span></label>
+        </div>
+      </div>
+      <button onclick="guardarClienteActualizado()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold p-2.5 rounded-xl text-xs">Guardar cambios</button>
+    </div>
+  </div>
+
+  <!-- MODAL: ASIGNAR VENDEDOR -->
+  <div id="modal-asignar-vendedor" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[75] flex items-center justify-center p-4">
+    <div class="bg-white border border-emerald-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center"><h3 class="text-sm font-bold text-emerald-600">👤 Asignar vendedor</h3><button onclick="cerrarModalAsignarVendedor()" class="text-slate-600">✕</button></div>
+      <p id="asignar-cli-nombre" class="text-xs text-slate-600"></p>
+      <select id="asignar-vendedor-select" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900"></select>
+      <button onclick="guardarAsignacionVendedor()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-2.5 rounded-xl text-xs">Guardar asignación</button>
+    </div>
+  </div>
+
+  <!-- MODAL: RESTABLECER CONTRASEÑA DE VENDEDOR -->
+  <div id="modal-restablecer-password" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[78] flex items-center justify-center p-4">
+    <div class="bg-white border border-amber-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-amber-600">🔑 Restablecer contraseña</h3>
+        <button onclick="cerrarModalRestablecerPassword()" class="text-slate-600">✕</button>
+      </div>
+      <p id="reset-vendedor-nombre" class="text-xs text-slate-600"></p>
+      <input id="reset-password-nueva" type="password" autocomplete="new-password" placeholder="Nueva contraseña" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="reset-password-confirmar" type="password" autocomplete="new-password" placeholder="Confirmar nueva contraseña" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <button onclick="guardarRestablecerPassword()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold p-2.5 rounded-xl text-xs">Guardar nueva contraseña</button>
+    </div>
+  </div>
+
+  <!-- MODAL: CRÉDITO CLIENTE -->
+  <div id="modal-credito-cliente" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[91] flex items-center justify-center p-4">
+    <div class="bg-white border border-amber-300 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-5 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalCreditoCliente()" class="absolute top-4 right-4 text-slate-600">✕</button>
+      <div><h3 class="text-lg font-bold text-amber-700">💳 Crédito / Fiado</h3><p id="credito-cli-nombre" class="text-xs text-slate-600"></p></div>
+      <div id="credito-resumen" class="grid grid-cols-3 gap-2"></div>
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2"><h4 class="text-xs font-bold text-slate-700">Registrar abono</h4><div class="grid grid-cols-2 gap-2"><input type="number" id="credito-abono-monto" min="0.01" step="0.01" placeholder="Monto" class="bg-white border border-slate-300 rounded-lg p-2.5 text-xs"><button onclick="registrarAbonoCredito()" class="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold">💵 Abonar</button></div><button onclick="liquidarCreditoCliente()" class="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-lg p-2.5 text-xs font-bold">✅ Liquidar crédito</button></div>
+      <div><h4 class="text-xs font-bold text-slate-700 mb-2">Historial de ventas a crédito</h4><div id="credito-historial-ventas" class="space-y-2"></div></div>
+      <div><h4 class="text-xs font-bold text-slate-700 mb-2">Historial de abonos</h4><div id="credito-historial-abonos" class="space-y-2"></div></div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR USUARIO ROOT -->
+  <div id="modal-editar-admin" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+    <div class="bg-white border border-purple-300 w-full max-w-md rounded-2xl p-5 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalEditarAdmin()" class="absolute top-4 right-4 text-slate-600 hover:text-slate-900">✕</button>
+      <div>
+        <h3 class="text-base font-bold text-purple-700">⚙️ Editar Usuario en Firebase</h3>
+        <p class="text-[11px] text-slate-500">Configuración central del usuario y permisos de acceso</p>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-slate-700 block mb-1">Rol Asignado *</label>
+        <select id="edit-adm-rol" onchange="alternarCamposRolEditarRoot()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-semibold text-slate-900">
+          <option value="admin">👑 Administrador</option>
+          <option value="vendedor">💼 Vendedor</option>
+        </select>
+      </div>
+      <div id="edit-wrap-asignar-admin" class="hidden">
+        <label class="text-[11px] font-bold text-purple-700 block mb-1">🏢 Asignar a Administrador / Negocio</label>
+        <select id="edit-adm-vendedor-asignado" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900"></select>
+      </div>
+      <input type="text" id="edit-adm-nombre" placeholder="Nombre completo" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+      <input type="text" id="edit-adm-negocio" placeholder="Negocio / Sucursal" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+      <input type="tel" id="edit-adm-telefono" placeholder="Teléfono" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+      <input type="text" id="edit-adm-direccion" placeholder="Dirección" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+      <div id="edit-wrap-campos-admin" class="grid grid-cols-2 gap-2">
+        <select id="edit-adm-dia-pago" class="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+          <option value="1">Día 1 de cada mes</option>
+          <option value="5">Día 5 de cada mes</option>
+          <option value="10">Día 10 de cada mes</option>
+          <option value="15">Día 15 de cada mes</option>
+          <option value="20">Día 20 de cada mes</option>
+          <option value="25">Día 25 de cada mes</option>
+          <option value="30">Día 30 de cada mes</option>
+        </select>
+        <input type="date" id="edit-adm-ultimo-pago" title="Último pago realizado" class="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900">
+      </div>
+      <label class="flex items-center gap-2 text-xs text-slate-700 font-medium">
+        <input type="checkbox" id="edit-adm-acceso" class="accent-emerald-600 rounded"> Acceso activo autorizado en el sistema
+      </label>
+      <button onclick="guardarEdicionAdmin()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold p-3 rounded-xl text-xs transition shadow-sm">💾 Guardar cambios en Firebase</button>
+    </div>
+  </div>
+
+  <div id="modal-root-reset-admin" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+    <div class="bg-white border border-purple-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-purple-700">🔑 Restablecer contraseña</h3>
+        <button onclick="cerrarModalRootResetAdmin()" class="text-slate-500 hover:text-slate-900">✕</button>
+      </div>
+      <p id="root-reset-admin-nombre" class="text-xs text-slate-600"></p>
+      <input id="root-reset-admin-nueva" type="password" autocomplete="new-password" placeholder="Nueva contraseña" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="root-reset-admin-confirmar" type="password" autocomplete="new-password" placeholder="Confirmar nueva contraseña" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <button onclick="guardarRootResetAdmin()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold p-2.5 rounded-xl text-xs">Guardar nueva contraseña</button>
+    </div>
+  </div>
+
+  <!-- MODAL: DETALLE DE VENTA HISTÓRICA -->
+  <div id="modal-detalle-venta" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[79] flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-blue-700">🧾 Detalle de venta</h3>
+        <button onclick="cerrarDetalleVenta()" class="text-slate-600 hover:text-slate-900">✕</button>
+      </div>
+      <div id="detalle-venta-contenido" class="space-y-3 text-xs"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: TICKET -->
+  <div id="modal-ticket" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+    <div class="bg-white border border-amber-300 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4 text-center">
+      <p class="text-3xl">🧾</p><h3 class="text-lg font-bold text-slate-900">Venta registrada</h3>
+      <p id="ticket-resumen" class="text-xs text-slate-600"></p>
+      <p class="text-sm text-slate-800">¿Deseas imprimir el ticket?</p>
+      <div class="space-y-2">
+        <button onclick="generarTicketPDF()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl text-sm">🧾 Sí, generar ticket PDF (58 mm)</button>
+        <button onclick="terminarDespuesTicket()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm">No, continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SINCRONIZAR CON LA NUBE -->
+  <div id="modal-sync" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[85] flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-sm rounded-2xl p-5 shadow-2xl relative space-y-4">
+      <button onclick="cerrarModalSync()" class="absolute top-4 right-4 text-slate-600 hover:text-slate-900">✕</button>
+      <div class="space-y-1">
+        <h3 class="text-lg font-bold text-blue-700">🔄 Sincronizar</h3>
+        <p class="text-[11px] text-slate-500">Todo se almacena en este dispositivo y se sincroniza en la nube con Firebase Firestore.</p>
+      </div>
+
+      <div id="sync-estado-config" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-slate-600">Firebase:</span>
+          <span id="sync-estado-firebase" class="font-semibold text-emerald-600">✅ Conectado</span>
+        </div>
+        <div class="flex justify-between items-center border-t border-slate-200 pt-1.5 mt-1">
+          <span class="text-slate-600">Negocio / Cuenta:</span>
+          <span id="sync-negocio-activo" class="font-bold text-blue-700 truncate max-w-[160px]">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-slate-600">Almacenamiento:</span>
+          <span class="font-semibold text-emerald-700">💾 Local Storage Activo</span>
+        </div>
+        <div class="text-[10px] text-slate-500">🔐 Proyecto: <strong>ventas-campo-92a4c</strong> (BERTIN GARCIA-GNET)</div>
+      </div>
+
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+        <div class="flex justify-between">
+          <span class="text-slate-600">Última sincronización:</span>
+          <span id="sync-ultima" class="font-semibold text-slate-800">Nunca</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-600">Acceso confirmado:</span>
+          <span id="sync-acceso" class="font-semibold text-slate-800">—</span>
+        </div>
+      </div>
+
+      <button id="btn-sync-ahora" onclick="sincronizarAhora()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold p-3 rounded-xl text-sm transition shadow-lg">
+        📡 Sincronizar ahora
+      </button>
+
+      <div id="sync-log" class="text-[10px] text-slate-500 space-y-1 max-h-28 overflow-y-auto border-t border-slate-200 pt-2"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: ESCÁNER DE CÓDIGO DE BARRAS (CÁMARA) -->
+  <div id="modal-escaner" class="hidden fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-300 w-full max-w-sm rounded-2xl p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-blue-600">📷 Escanear código de barras</h3>
+        <button onclick="cerrarEscaner()" class="text-slate-600 hover:text-slate-900 text-sm">✕</button>
+      </div>
+      <div id="lector-camara" class="w-full rounded-xl overflow-hidden bg-black min-h-[220px]"></div>
+      <p id="escaner-estado" class="text-[11px] text-slate-600 text-center"></p>
+      <button onclick="cerrarEscaner()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-xs font-semibold p-2.5 rounded-lg">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Librerías externas: lector de códigos (cámara) y exportación a Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Firebase Compat Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+  <!-- Script Principal de la Aplicación -->
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
