@@ -4669,6 +4669,12 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
     }
   }
 
+  // El cambio ya quedó confirmado en el servidor: se actualiza la copia
+  // local para que la lista del Root muestre el estado real.
+  usuario.accesoActivo = nuevoEstado;
+  localStorage.setItem('admins_db', JSON.stringify(adminsDB));
+  localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
+
   toast(nuevoEstado
     ? "🔓 Acceso activado"
     : (esAdmin
