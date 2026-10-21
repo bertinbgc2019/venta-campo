@@ -102,6 +102,17 @@ const tokens = {
 };
 console.log("Tokens reales emitidos para root / leo26 (admin) / luis26 / carlos\n");
 
+// Los documentos que cada vendedor tiene van cambiando con el uso de la
+// app, así que se eligen DINÁMICOS (un cliente y una venta de cada uno)
+// en lugar de dejar ids fijos que se quedan obsoletos.
+const snapClientes = await db.collection("negocios").doc(NID).collection("clientes").get();
+const snapVentas = await db.collection("negocios").doc(NID).collection("ventas").get();
+const deVendedor = (snap, uid) => snap.docs.find((d) => d.data().vendedorId === uid);
+const cliAjeno = deVendedor(snapClientes, VEND2);   // cliente de carlos
+const cliPropio = deVendedor(snapClientes, VEND1);  // cliente de luis26
+const venAjena = deVendedor(snapVentas, VEND2);     // venta de carlos
+const venPropia = deVendedor(snapVentas, VEND1);    // venta de luis26
+
 const casos = [
   // --- Root ---
   { n: "Root lista administradores", m: "GET", p: "/admins", t: "root", e: 200 },
@@ -122,9 +133,10 @@ const casos = [
   { n: "Vendedor lee su perfil espejo", m: "GET", p: `/vendedores/${VEND1}`, t: "vend1", e: 200 },
   { n: "Vendedor lee el catalogo de SU negocio", m: "GET", p: `/negocios/${NID}/productos`, t: "vend1", e: 200 },
   { n: "Vendedor NO lista clientes sin filtro (debe fallar)", m: "GET", p: `/negocios/${NID}/clientes`, t: "vend1", e: 403 },
-  { n: "Vendedor NO lee un cliente de otro vendedor", m: "GET", p: `/negocios/${NID}/clientes/1792004425590`, t: "vend1", e: 403 },
-  { n: "Vendedor SI lee una venta propia", m: "GET", p: `/negocios/${NID}/ventas/1791923546936`, t: "vend1", e: 200 },
-  { n: "Vendedor NO lee una venta de otro vendedor", m: "GET", p: `/negocios/${NID}/ventas/1792176423324`, t: "vend1", e: 403 },
+  cliAjeno ? { n: "Vendedor NO lee un cliente de otro vendedor", m: "GET", p: `/negocios/${NID}/clientes/${cliAjeno.id}`, t: "vend1", e: 403 } : null,
+  cliPropio ? { n: "Vendedor SI lee su propio cliente", m: "GET", p: `/negocios/${NID}/clientes/${cliPropio.id}`, t: "vend1", e: 200 } : null,
+  venPropia ? { n: "Vendedor SI lee una venta propia", m: "GET", p: `/negocios/${NID}/ventas/${venPropia.id}`, t: "vend1", e: 200 } : null,
+  venAjena ? { n: "Vendedor NO lee una venta de otro vendedor", m: "GET", p: `/negocios/${NID}/ventas/${venAjena.id}`, t: "vend1", e: 403 } : null,
   { n: "Vendedor NO lista clientes de otro negocio", m: "GET", p: `/negocios/${OTRO_NEGOCIO}/clientes`, t: "vend1", e: 403 },
   { n: "Vendedor NO lee el perfil del administrador", m: "GET", p: `/admins/${ADMIN}`, t: "vend1", e: 403 },
   { n: "Vendedor NO lista el directorio global", m: "GET", p: "/vendedores", t: "vend1", e: 403 },
@@ -132,7 +144,7 @@ const casos = [
   // --- Sin sesion ---
   { n: "Anonimo NO lee el catalogo", m: "GET", p: `/negocios/${NID}/productos`, t: null, e: 403 },
   { n: "Anonimo NO lee administradores", m: "GET", p: "/admins", t: null, e: 403 },
-];
+].filter(Boolean);
 
 let ok = 0, fallos = 0;
 for (const c of casos) {

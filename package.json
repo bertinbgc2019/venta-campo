@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "verificar:aislamiento": "node scripts/verificar-aislamiento.mjs",
     "verificar:bloqueo": "node scripts/verificar-bloqueo.mjs",
-    "verificar:ticket": "node scripts/verificar-ticket-pdf.mjs"
+    "verificar:ticket": "node scripts/verificar-ticket-pdf.mjs",
+    "verificar:whatsapp": "node scripts/verificar-whatsapp.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

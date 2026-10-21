@@ -2799,8 +2799,10 @@ window.generarTicketPDF = function() {
   const op = ultimaOperacion;
   construirTicketPDF(op).save(nombreArchivoTicket(op));
   document.getElementById('modal-ticket').classList.add('hidden');
-  if (op.telefono) mostrarModalWhatsApp(op);
-  else { toast('✅ Ticket PDF generado'); ultimaOperacion = null; }
+  toast('✅ Ticket PDF generado');
+  // También se ofrece el envío por WhatsApp: si el cliente no está
+  // registrado se le pregunta el número en el momento de enviar.
+  mostrarModalWhatsApp(op);
 };
 
 // Envía el ticket como PDF adjunto por WhatsApp.
@@ -2810,6 +2812,15 @@ window.enviarTicketPDFPorWhatsApp = async function() {
   if (!ultimaOperacion) return;
   if (!window.jspdf || !window.jspdf.jsPDF) return alert('Generador PDF no disponible.');
   const op = ultimaOperacion;
+
+  // Destino: si el cliente está registrado se usa su número guardado;
+  // si no está registrado se le pide el número al usuario.
+  const numero = await numeroWhatsAppParaEnvio(op);
+  if (!numero) {
+    toast('⚠️ Se necesita un número de WhatsApp para enviar el ticket');
+    return;
+  }
+
   const doc = construirTicketPDF(op);
   const archivo = nombreArchivoTicket(op);
   const texto = 'Hola ' + (op.clienteNombre || '') + ' 👋\nTe enviamos tu ' + (op.tipo === 'pedido' ? 'pedido' : 'ticket de venta') + ' por ' + fmtMoneda(op.total) + '.\n¡Gracias por tu preferencia!';
@@ -2829,12 +2840,9 @@ window.enviarTicketPDFPorWhatsApp = async function() {
     console.warn('No se pudo compartir el PDF:', e && e.message);
   }
 
-  // Respaldo: se descarga el PDF y se abre WhatsApp con el resumen
+  // Respaldo: se descarga el PDF y se abre WhatsApp con el número destino
   doc.save(archivo);
-  const numero = telefonoWhatsApp(op.telefono);
-  if (numero.length >= 10) {
-    window.open('https://wa.me/' + numero + '?text=' + encodeURIComponent(texto + '\n\n(Adjunta el archivo PDF que se acaba de descargar.)'), '_blank');
-  }
+  window.open('https://wa.me/' + numero + '?text=' + encodeURIComponent(texto + '\n\n(Adjunta el archivo PDF que se acaba de descargar.)'), '_blank');
   cerrarModalesTicket();
   toast('📄 Ticket PDF descargado');
 };
@@ -2850,11 +2858,90 @@ function cerrarModalesTicket() {
 // Expuesto para pruebas y soporte
 window.construirTicketPDF = construirTicketPDF;
 window.nombreArchivoTicket = nombreArchivoTicket;
+window.normalizarNumeroWhatsApp = normalizarNumeroWhatsApp;
+window.numeroWhatsAppParaEnvio = numeroWhatsAppParaEnvio;
 
 function telefonoWhatsApp(tel) {
   let digitos = String(tel || '').replace(/\D/g, '');
   if (digitos.length === 10) digitos = CODIGO_PAIS_WHATSAPP + digitos;
   return digitos;
+}
+
+// Normaliza un teléfono a un número válido de WhatsApp (lada 52 + 10 dígitos).
+// Devuelve '' si con los datos capturados no se puede armar un número válido.
+function normalizarNumeroWhatsApp(tel) {
+  let digitos = String(tel || '').replace(/\D/g, '');
+  if (digitos.length === 10) {
+    digitos = CODIGO_PAIS_WHATSAPP + digitos;
+  } else if (digitos.length === 11 && digitos.charAt(0) === '1') {
+    digitos = CODIGO_PAIS_WHATSAPP + digitos.slice(1);
+  } else if (digitos.length >= 13 && digitos.charAt(0) === '1' && digitos.slice(1, 3) === CODIGO_PAIS_WHATSAPP) {
+    digitos = digitos.slice(1);   // +1 52 10 dígitos
+  }
+  if (digitos.length >= 12 && digitos.startsWith(CODIGO_PAIS_WHATSAPP)) return digitos;
+  return '';
+}
+
+// ============================================================
+// CAPTURA DEL NÚMERO DE WHATSAPP
+// Se usa un modal de la app (no un prompt del navegador) para que
+// funcione igual en el celular que en la computadora.
+// ============================================================
+let resolverNumeroWhatsApp = null;
+
+// Muestra el modal para escribir el número de WhatsApp.
+// Devuelve una promesa que resuelve con el número ya normalizado
+// (52 + 10 dígitos) o '' si el usuario cancela.
+window.pedirNumeroWhatsApp = function() {
+  const modal = document.getElementById('modal-numero-whatsapp');
+  const input = document.getElementById('input-numero-whatsapp');
+  const error = document.getElementById('error-numero-whatsapp');
+  if (!modal || !input) return Promise.resolve('');
+
+  if (error) { error.innerText = ''; error.classList.add('hidden'); }
+  input.value = '';
+  modal.classList.remove('hidden');
+  try { input.focus(); } catch (_) {}
+
+  return new Promise((resolve) => { resolverNumeroWhatsApp = resolve; });
+};
+
+// Botón "Usar este número": valida y cierra el modal.
+window.confirmarNumeroWhatsApp = function() {
+  const input = document.getElementById('input-numero-whatsapp');
+  const error = document.getElementById('error-numero-whatsapp');
+  const numero = normalizarNumeroWhatsApp(input ? input.value : '');
+  if (!numero) {
+    if (error) {
+      error.innerText = 'Ese número no es válido. Escribe 10 dígitos con lada (ejemplo: 5512345678).';
+      error.classList.remove('hidden');
+    }
+    return;
+  }
+  window.cerrarModalNumeroWhatsApp(numero);
+};
+
+// Botón "Cancelar" o cualquier cierre del modal.
+window.cerrarModalNumeroWhatsApp = function(numero) {
+  const modal = document.getElementById('modal-numero-whatsapp');
+  if (modal) modal.classList.add('hidden');
+  const resolver = resolverNumeroWhatsApp;
+  resolverNumeroWhatsApp = null;
+  if (resolver) resolver(numero || '');
+};
+
+// Determina el número de WhatsApp de destino de una operación:
+//   - Si el cliente está registrado se usa su número guardado.
+//   - Si el cliente NO está registrado (venta de mostrador) se le pide
+//     el número al usuario, porque no hay ninguno en el sistema.
+// Devuelve '' si el usuario cancela.
+async function numeroWhatsAppParaEnvio(op) {
+  const registrado = normalizarNumeroWhatsApp(op && op.telefono);
+  if (registrado) return registrado;
+
+  // Cliente sin registro: no hay número guardado, se le pregunta.
+  const capturado = await window.pedirNumeroWhatsApp();
+  return normalizarNumeroWhatsApp(capturado);
 }
 
 function armarMensajeWhatsApp(op) {
@@ -2888,10 +2975,14 @@ window.cerrarModalWhatsApp = function() {
   ultimaOperacion = null;
 };
 
-window.enviarPorWhatsApp = function() {
+window.enviarPorWhatsApp = async function() {
   if (!ultimaOperacion) return;
-  const numero = telefonoWhatsApp(ultimaOperacion.telefono);
-  if (numero.length < 10) return alert('Teléfono del cliente no válido para WhatsApp.');
+  // Cliente registrado: se usa su número. Cliente no registrado: se pregunta.
+  const numero = await numeroWhatsAppParaEnvio(ultimaOperacion);
+  if (!numero) {
+    toast('⚠️ Se necesita un número de WhatsApp para enviar el ticket');
+    return;
+  }
   const url = `https://wa.me/${numero}?text=${encodeURIComponent(armarMensajeWhatsApp(ultimaOperacion))}`;
   window.open(url, '_blank');
   cerrarModalWhatsApp();
@@ -3888,6 +3979,15 @@ window.autenticarVendedor = async function(e) {
       ...res
     });
   } catch (err) {
+    const msg = String(err.message || '');
+    if (/suspendid[oa]|no autorizad|no está registrad/i.test(msg)) {
+      // Cuenta suspendida: se cierra la sesión de Firebase para que no
+      // pueda seguir usando la app con la sesión viva.
+      try { if (typeof firebase !== 'undefined' && firebase.auth) await firebase.auth().signOut(); } catch (_) {}
+      usuarioActual = null;
+      mostrarPantallaAccesoNoAutorizado();
+      return;
+    }
     alert("❌ Error de acceso: " + (err.message || "Usuario o contraseña incorrectos"));
   } finally {
     if (btn) { btn.textContent = "Ingresar al Sistema"; btn.disabled = false; }
@@ -3933,6 +4033,15 @@ window.autenticarAdmin = async function(e) {
       ...res
     });
   } catch (err) {
+    const msg = String(err.message || '');
+    if (/suspendid[oa]|no autorizad|no está registrad/i.test(msg)) {
+      // Cuenta suspendida: se cierra la sesión de Firebase para que no
+      // pueda seguir usando la app con la sesión viva.
+      try { if (typeof firebase !== 'undefined' && firebase.auth) await firebase.auth().signOut(); } catch (_) {}
+      usuarioActual = null;
+      mostrarPantallaAccesoNoAutorizado();
+      return;
+    }
     alert("❌ Error de acceso: " + (err.message || "Credenciales incorrectas"));
   } finally {
     if (btn) { btn.textContent = "Iniciar Sesión"; btn.disabled = false; }
@@ -4497,7 +4606,8 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
 
   const rolUsuario = usuario.rol || rol || 'admin';
   const esAdmin = rolUsuario === 'admin';
-  const vaABloquear = usuario.accesoActivo !== false;
+  const estadoAnterior = usuario.accesoActivo !== false;
+  const vaABloquear = estadoAnterior;
   const nombreUsuario = usuario.nombreCompleto || usuario.nombre || usuario.usuario || id;
 
   // Aviso claro de lo que va a pasar antes de aplicar el cambio
@@ -4512,8 +4622,7 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
     if (!confirm(mensaje)) return;
   }
 
-  usuario.accesoActivo = !usuario.accesoActivo;
-  const nuevoEstado = usuario.accesoActivo;
+  const nuevoEstado = !estadoAnterior;
 
   localStorage.setItem('admins_db', JSON.stringify(adminsDB));
   localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
@@ -4538,10 +4647,24 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
       }
 
       await batch.commit();
+
+      // Se relee del servidor: si el cambio no está guardado de verdad,
+      // no se puede mostrar "Bloqueado" en la pantalla del Root.
+      const verif = await dbFs.collection(col).doc(String(usuario.id)).get();
+      const confirmado = verif.exists && ((verif.data().accesoActivo !== false) === nuevoEstado);
+      if (!confirmado) throw new Error('El servidor no confirmó el cambio.');
     } catch (e) {
       console.warn("Firestore toggle acceso error:", e);
-      toast('⚠️ No se pudo guardar el cambio en la nube', 'warn');
+      // Se revierte el estado local: no se muestra un bloqueo que no ocurrió
+      usuario.accesoActivo = estadoAnterior;
+      localStorage.setItem('admins_db', JSON.stringify(adminsDB));
+      localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
       renderizarAdminsEnLista();
+      alert(
+        '⚠️ No se pudo aplicar el cambio de acceso a "' + nombreUsuario + '".\n\n' +
+        'Revisa tu conexión a internet e inténtalo de nuevo.\n\n' +
+        'Detalle: ' + (e && e.message ? e.message : 'error desconocido')
+      );
       return;
     }
   }
@@ -4679,6 +4802,94 @@ window.volverAlLoginDesdeConexion = function() {
 window.abrirModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); };
 window.cerrarModal = (id) => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); };
 
+// ============================================================
+// ESTADO DE ACCESO (fuente de verdad: la nube)
+// Lee el perfil del usuario y dice si puede entrar.
+//   bloqueado  -> el Root le suspendió la cuenta (accesoActivo === false)
+//   suspendido -> su negocio está suspendido (sólo afecta a los vendedores:
+//                 pierden el historial de ventas y la edición de clientes)
+// Devuelve null si no se pudo comprobar (sin conexión).
+// ============================================================
+window.leerEstadoAcceso = async function(uid) {
+  if (!uid || !navigator.onLine || typeof firebase === 'undefined' || !firebase.firestore) return null;
+  const db = firebase.firestore();
+
+  // En equipos lentos (o con la app en segundo plano) la primera lectura
+  // puede tardar: se espera más y se reintenta una vez antes de rendirse.
+  const leerDoc = async (coleccion) => {
+    for (let intento = 1; intento <= 2; intento++) {
+      try {
+        return await conTimeout(db.collection(coleccion).doc(String(uid)).get(), 9000);
+      } catch (e) {
+        if (e && e.message === 'TIMEOUT_CONEXION' && intento < 2) {
+          console.warn('Lectura lenta de ' + coleccion + '/' + uid + ': se reintenta...');
+          continue;
+        }
+        throw e;
+      }
+    }
+    return null;
+  };
+
+  try {
+    const docAdm = await leerDoc('admins');
+    if (docAdm && docAdm.exists) {
+      const data = docAdm.data();
+      return {
+        rol: 'admin',
+        perfil: { id: docAdm.id, authUid: String(uid), rol: 'admin', ...data },
+        bloqueado: data.accesoActivo === false,
+        suspendido: false
+      };
+    }
+    const docVend = await leerDoc('vendedores');
+    if (docVend && docVend.exists) {
+      const data = docVend.data();
+      let suspendido = false;
+      if (data.negocioId) {
+        try {
+          const docNeg = await conTimeout(db.collection('negocios').doc(String(data.negocioId)).get(), 5000);
+          suspendido = !!(docNeg.exists && docNeg.data().suspendido === true);
+        } catch (_) {}
+      }
+      return {
+        rol: 'vendedor',
+        perfil: { id: docVend.id, authUid: String(uid), rol: 'vendedor', ...data },
+        bloqueado: data.accesoActivo === false,
+        suspendido
+      };
+    }
+  } catch (e) {
+    console.warn('No se pudo leer el estado de acceso:', e && e.message);
+  }
+  return null;
+};
+
+// Revisa el acceso del usuario actual y, si fue bloqueado, cierra su
+// sesión y lo saca de la aplicación.
+window.validarAccesoActual = async function() {
+  if (!usuarioActual || !usuarioActual.authUid) return true;
+  if (usuarioActual.rol === 'root') return true;
+
+  const estado = await window.leerEstadoAcceso(usuarioActual.authUid);
+  if (!estado) return true;   // sin conexión: no se puede comprobar ahora
+
+  if (estado.bloqueado) {
+    console.warn('⛔ Acceso suspendido para', usuarioActual.authUid);
+    try { if (typeof firebase !== 'undefined' && firebase.auth) await firebase.auth().signOut(); } catch (_) {}
+    usuarioActual = null;
+    localStorage.removeItem('sesion_usuario');
+    mostrarPantallaAccesoNoAutorizado();
+    return false;
+  }
+
+  if (estado.rol === 'vendedor') {
+    usuarioActual.negocioSuspendido = estado.suspendido;
+    if (typeof window.aplicarSuspensionNegocio === 'function') window.aplicarSuspensionNegocio();
+  }
+  return true;
+};
+
 if (typeof firebase !== 'undefined' && firebase.auth) {
   try {
     firebase.auth().onAuthStateChanged(async (user) => {
@@ -4687,14 +4898,6 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
         sessionStorage.setItem('userEmail', user.email);
         const email = (user.email || '').toLowerCase();
 
-        // Si ya hay usuarioActual en memoria con datos completos y negocio válido, no sobreescribir con valores genéricos
-        if (usuarioActual && (usuarioActual.email === email || usuarioActual.usuario === email || usuarioActual.id === user.uid || usuarioActual.authUid === user.uid)) {
-          if (usuarioActual.negocio && usuarioActual.negocio !== 'GNET' && usuarioActual.negocio !== 'GNET Operaciones') {
-            console.log('Manteniendo sesión activa con negocio:', usuarioActual.negocio);
-            return;
-          }
-        }
-
         if (email.includes('root') || email.includes('gnet')) {
           document.getElementById('pantalla-login').classList.add('hidden');
           document.getElementById('pantalla-superadmin').classList.remove('hidden');
@@ -4702,54 +4905,80 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
           return;
         }
 
-        // Buscar rol y datos en bases de datos locales
-        const todosAdmins = [
-          ...(typeof adminsDB !== 'undefined' ? adminsDB : []),
-          ...JSON.parse(localStorage.getItem('admins_db') || '[]')
-        ];
-        const adm = todosAdmins.find(a => 
-          (a.email && a.email.toLowerCase() === email) || 
-          (a.usuario && a.usuario.toLowerCase() === email) ||
-          (a.authUid && a.authUid === user.uid) ||
-          (a.id && String(a.id) === user.uid)
-        );
-
-        const todosVends = [
-          ...(typeof vendedoresDB !== 'undefined' ? vendedoresDB : []),
-          ...JSON.parse(localStorage.getItem('vendedores_db') || '[]')
-        ];
-        const vend = todosVends.find(v => 
-          (v.email && v.email.toLowerCase() === email) || 
-          (v.usuario && v.usuario.toLowerCase() === email) ||
-          (v.authUid && v.authUid === user.uid) ||
-          (v.id && String(v.id) === user.uid)
-        );
+        // --------------------------------------------------------
+        // 1) VALIDACIÓN DE ACCESO contra la nube (fuente de verdad).
+        //    Se hace ANTES de mantener o crear la sesión: si el Root
+        //    bloqueó la cuenta, el usuario no puede entrar aunque su
+        //    sesión de Firebase siga viva en el navegador.
+        // --------------------------------------------------------
+        let estado = await window.leerEstadoAcceso(user.uid);
+        if (estado && estado.bloqueado) {
+          console.warn('⛔ Cuenta suspendida por el Superadministrador:', user.uid);
+          try { await firebase.auth().signOut(); } catch (_) {}
+          mostrarPantallaAccesoNoAutorizado();
+          return;
+        }
 
         let rol = null;
         let perfil = null;
 
-        if (adm) {
-          rol = 'admin';
-          perfil = { ...adm, authUid: user.uid };
-        } else if (vend) {
-          rol = 'vendedor';
-          perfil = { ...vend, authUid: user.uid };
-        } else if (typeof firebase !== 'undefined' && firebase.firestore) {
-          // Lectura directa por UID (sin escanear colecciones completas)
-          try {
-            const db = firebase.firestore();
-            const docAdm = await db.collection('admins').doc(user.uid).get();
-            if (docAdm.exists) {
-              rol = 'admin';
-              perfil = { id: docAdm.id, authUid: user.uid, rol: 'admin', ...docAdm.data() };
-            } else {
-              const docVend = await db.collection('vendedores').doc(user.uid).get();
-              if (docVend.exists) {
-                rol = 'vendedor';
-                perfil = { id: docVend.id, authUid: user.uid, rol: 'vendedor', ...docVend.data() };
-              }
-            }
-          } catch (_) {}
+        if (estado && estado.perfil) {
+          rol = estado.rol;
+          perfil = estado.perfil;
+        }
+
+        // Sin conexión (o si la nube no respondió): se usa la copia local
+        // del dispositivo para poder trabajar sin internet.
+        if (!perfil) {
+          const todosAdmins = [
+            ...(typeof adminsDB !== 'undefined' ? adminsDB : []),
+            ...JSON.parse(localStorage.getItem('admins_db') || '[]')
+          ];
+          const adm = todosAdmins.find(a =>
+            (a.email && a.email.toLowerCase() === email) ||
+            (a.usuario && a.usuario.toLowerCase() === email) ||
+            (a.authUid && a.authUid === user.uid) ||
+            (a.id && String(a.id) === user.uid)
+          );
+
+          const todosVends = [
+            ...(typeof vendedoresDB !== 'undefined' ? vendedoresDB : []),
+            ...JSON.parse(localStorage.getItem('vendedores_db') || '[]')
+          ];
+          const vend = todosVends.find(v =>
+            (v.email && v.email.toLowerCase() === email) ||
+            (v.usuario && v.usuario.toLowerCase() === email) ||
+            (v.authUid && v.authUid === user.uid) ||
+            (v.id && String(v.id) === user.uid)
+          );
+
+          if (adm) { rol = 'admin'; perfil = { ...adm, authUid: user.uid }; }
+          else if (vend) { rol = 'vendedor'; perfil = { ...vend, authUid: user.uid }; }
+
+          // Si la copia local ya sabe que la cuenta está suspendida, se bloquea.
+          if (perfil && perfil.accesoActivo === false) {
+            console.warn('⛔ Cuenta suspendida (copia local del dispositivo):', user.uid);
+            try { await firebase.auth().signOut(); } catch (_) {}
+            mostrarPantallaAccesoNoAutorizado();
+            return;
+          }
+        }
+
+        // Si no se pudo determinar el rol, se intenta una vez más contra la
+        // nube (puede haber sido una lectura lenta) y sólo después de eso se
+        // cierra la sesión, para no expulsar al usuario por un fallo puntual.
+        if (!rol) {
+          estado = await window.leerEstadoAcceso(user.uid);
+          if (estado && estado.bloqueado) {
+            console.warn('⛔ Cuenta suspendida por el Superadministrador:', user.uid);
+            try { await firebase.auth().signOut(); } catch (_) {}
+            mostrarPantallaAccesoNoAutorizado();
+            return;
+          }
+          if (estado && estado.perfil) {
+            rol = estado.rol;
+            perfil = estado.perfil;
+          }
         }
 
         // Si no se pudo determinar el rol, no se adivina: se cierra la sesión
@@ -4758,6 +4987,18 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
           console.warn('No se encontró perfil para', user.uid, '- cerrando sesión');
           try { await firebase.auth().signOut(); } catch (_) {}
           return;
+        }
+
+        // Si ya hay usuarioActual en memoria con datos completos y negocio válido, no sobreescribir con valores genéricos
+        if (usuarioActual && (usuarioActual.email === email || usuarioActual.usuario === email || usuarioActual.id === user.uid || usuarioActual.authUid === user.uid)) {
+          if (usuarioActual.negocio && usuarioActual.negocio !== 'GNET' && usuarioActual.negocio !== 'GNET Operaciones') {
+            console.log('Manteniendo sesión activa con negocio:', usuarioActual.negocio);
+            if (estado && estado.rol === 'vendedor') {
+              usuarioActual.negocioSuspendido = estado.suspendido;
+              if (typeof window.aplicarSuspensionNegocio === 'function') window.aplicarSuspensionNegocio();
+            }
+            return;
+          }
         }
 
         const nombreDetectado = perfil?.nombreCompleto || perfil?.nombre || user.displayName || (rol === 'admin' ? 'Administrador' : 'Vendedor');
@@ -4776,7 +5017,8 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
           adminAuthUid: perfil?.adminAuthUid || (rol === 'admin' ? user.uid : undefined),
           adminEmail: perfil?.adminEmail || (rol === 'admin' ? user.email : undefined),
           negocio: negocioDetectado,
-          accesoActivo: true,
+          accesoActivo: perfil?.accesoActivo !== false,
+          negocioSuspendido: estado ? !!estado.suspendido : false,
           ...(perfil || {})
         });
       }
@@ -4785,6 +5027,20 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
     console.warn('onAuthStateChanged error:', e);
   }
 }
+
+// Comprobación periódica del acceso: si el Root bloquea a un usuario
+// mientras la app está abierta, se le expulsa en el siguiente control.
+setInterval(() => {
+  if (document.visibilityState === 'visible' && usuarioActual && usuarioActual.rol !== 'root') {
+    window.validarAccesoActual();
+  }
+}, 60000);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && usuarioActual && usuarioActual.rol !== 'root') {
+    window.validarAccesoActual();
+  }
+});
 
 window.cargarListaVendedores = function() {
   // Root: directorio global (consulta puntual, no escucha en vivo).
