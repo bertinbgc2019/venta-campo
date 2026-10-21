@@ -2,16 +2,30 @@
 import { resolve } from "node:path";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-const clave = JSON.parse(readFileSync(resolve(process.cwd(), "ventas-campo-92a4c-firebase-adminsdk-fbsvc-1f54aa407d.json"), "utf8"));
-initializeApp({ credential: cert(clave), projectId: "ventas-campo-92a4c" });
+initializeApp({ credential: cert(JSON.parse(readFileSync(resolve(process.cwd(), "ventas-campo-92a4c-firebase-adminsdk-fbsvc-1f54aa407d.json"), "utf8"))), projectId: "ventas-campo-92a4c" });
 const db = getFirestore();
 const NID = "0pzdWIPLKRNgQbpoQ1bh58c3aju2";
-const v = await db.collection("negocios").doc(NID).collection("ventas").get();
-console.log("ventas:", v.size);
-for (const d of v.docs) {
-  const f = d.data();
-  console.log(" -", d.id, "|", f.clienteNombre || "(mostrador)", "| total", f.totalVenta, "| vendedor", f.vendedorId);
+
+function normalizarGPS(valor) {
+  const crudo = String(valor == null ? "" : valor).trim();
+  if (!crudo) return "Sin GPS";
+  const partes = crudo.split(",").map(x => parseFloat(String(x).trim()));
+  if (partes.length < 2 || isNaN(partes[0]) || isNaN(partes[1])) return "Sin GPS";
+  if (partes[0] < -90 || partes[0] > 90 || partes[1] < -180 || partes[1] > 180) return "Sin GPS";
+  return partes[0].toFixed(5) + ", " + partes[1].toFixed(5);
 }
-console.log("\nclientes por vendedor:");
-const c = await db.collection("negocios").doc(NID).collection("clientes").get();
-for (const d of c.docs) console.log(" -", d.id, "|", d.data().nombre, "| vendedorId", d.data().vendedorId);
+
+const snap = await db.collection("negocios").doc(NID).collection("clientes").get();
+let corregidos = 0;
+for (const d of snap.docs) {
+  const gps = d.data().gps;
+  const nuevo = normalizarGPS(gps);
+  if (nuevo !== gps) {
+    await d.ref.set({ gps: nuevo }, { merge: true });
+    console.log("Corregido:", d.data().nombre, "|", JSON.stringify(gps), "->", JSON.stringify(nuevo));
+    corregidos++;
+  }
+}
+console.log(corregidos === 0 ? "No habia valores GPS corruptos" : ("Clientes corregidos: " + corregidos));
+const check = await db.collection("negocios").doc(NID).collection("clientes").get();
+for (const d of check.docs) console.log("  -", d.data().nombre, "| gps:", JSON.stringify(d.data().gps));

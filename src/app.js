@@ -833,7 +833,7 @@ window.guardarCliente = function(e) {
     telefono: document.getElementById('cli-telefono').value.trim(),
     direccion: document.getElementById('cli-direccion').value.trim(),
     vendedorId,
-    gps: document.getElementById('cli-gps').value || 'Sin GPS',
+    gps: normalizarGPS(document.getElementById('cli-gps').value),
     diasVisita: diasSeleccionados,
     fechaCreacion: new Date().toISOString()
   };
@@ -1056,12 +1056,24 @@ window.abrirModalActualizarCliente = function(id) {
 };
 window.cerrarModalCliente = function() { document.getElementById('modal-actualizar-cliente').classList.add('hidden'); clienteEditandoId=null; };
 
+// Normaliza el valor del campo GPS: sólo se guardan coordenadas válidas
+// ("latitud, longitud"). Cualquier otro texto (incluidos los mensajes de
+// error de versiones anteriores) se guarda como "Sin GPS".
+function normalizarGPS(valor) {
+  const crudo = String(valor == null ? '' : valor).trim();
+  if (!crudo) return 'Sin GPS';
+  const partes = crudo.split(',').map(x => parseFloat(String(x).trim()));
+  if (partes.length < 2 || isNaN(partes[0]) || isNaN(partes[1])) return 'Sin GPS';
+  if (partes[0] < -90 || partes[0] > 90 || partes[1] < -180 || partes[1] > 180) return 'Sin GPS';
+  return partes[0].toFixed(5) + ', ' + partes[1].toFixed(5);
+}
+
 window.guardarClienteActualizado = function() {
   const c=clientesDB.find(x=>x.id===clienteEditandoId); if(!c) return;
   const dias=Array.from(document.querySelectorAll('input[name="edit-dias"]:checked')).map(x=>x.value);
   if(!document.getElementById('edit-cli-nombre').value.trim()) return alert('Escribe el nombre del cliente.');
   if(!dias.length) return alert('Selecciona al menos un día de visita.');
-  c.nombre=document.getElementById('edit-cli-nombre').value.trim(); c.telefono=document.getElementById('edit-cli-telefono').value.trim(); c.direccion=document.getElementById('edit-cli-direccion').value.trim(); c.gps=document.getElementById('edit-cli-gps').value.trim() || 'Sin GPS'; c.diasVisita=dias;
+  c.nombre=document.getElementById('edit-cli-nombre').value.trim(); c.telefono=document.getElementById('edit-cli-telefono').value.trim(); c.direccion=document.getElementById('edit-cli-direccion').value.trim(); c.gps=normalizarGPS(document.getElementById('edit-cli-gps').value); c.diasVisita=dias;
   guardarClientesDB();
   guardarClienteEnNube(c);
   cerrarModalCliente(); renderizarMisClientes(); renderizarClientesAdmin(); renderizarAgenda(); toast('✅ Datos del cliente actualizados');
