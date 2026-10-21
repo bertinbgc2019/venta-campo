@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "verificar:aislamiento": "node scripts/verificar-aislamiento.mjs",
+    "verificar:bloqueo": "node scripts/verificar-bloqueo.mjs",
+    "verificar:ticket": "node scripts/verificar-ticket-pdf.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -34,6 +37,7 @@
     "esbuild": "^0.28.0",
     "firebase-admin": "^14.5.0",
     "firebase-tools": "^15.34.0",
+    "jspdf": "^2.5.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"

@@ -14,3 +14,6 @@ serviceAccount*.json
 .firebase/
 vite-dev.err
 vite-dev.log
+
+# PDF temporal de la verificación del ticket
+scripts/.ticket-verificacion.pdf
