@@ -198,6 +198,12 @@
       </div>
     </header>
 
+    <!-- AVISO: NEGOCIO SUSPENDIDO POR EL SUPERADMINISTRADOR -->
+    <div id="banner-negocio-suspendido" class="hidden mx-3 mt-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl p-3 text-xs space-y-1">
+      <p class="font-bold text-[12px]">⛔ Tu negocio está suspendido</p>
+      <p>El Superadministrador suspendió el acceso del administrador de este negocio. Por ahora no puedes revisar el historial de ventas ni modificar clientes. Si crees que es un error, comunícate con el Superadministrador.</p>
+    </div>
+
     <!-- ACCESOS PRINCIPALES -->
     <div id="menu-accesos" class="px-3 pt-3">
       <div class="grid grid-cols-4 gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-sm">
@@ -279,9 +285,13 @@
             <div class="bg-slate-50 p-3 rounded-xl border border-slate-300 space-y-2">
               <div class="flex justify-between items-center">
                 <span class="text-xs font-semibold text-slate-700">Ubicación GPS</span>
-                <button type="button" onclick="obtenerGPS()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg">📍 Capturar GPS</button>
+                <div class="flex gap-1.5">
+                  <button type="button" onclick="obtenerGPS('cli-gps')" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg">📍 Capturar GPS</button>
+                  <button type="button" onclick="verMapaGPS('cli-gps')" class="text-xs bg-white border border-slate-300 text-slate-700 px-2 py-1 rounded-lg">🗺️ Ver mapa</button>
+                </div>
               </div>
-              <input type="text" id="cli-gps" readonly placeholder="Coordenadas no capturadas" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-emerald-600 font-mono">
+              <input type="text" id="cli-gps" placeholder="Coordenadas no capturadas" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs text-emerald-600 font-mono">
+              <div id="cli-gps-mapa"></div>
             </div>
             <div>
               <label class="text-xs text-slate-600 block mb-1">Días de Visita Programada *</label>
@@ -976,9 +986,10 @@
         <h3 id="wa-titulo" class="text-lg font-bold text-emerald-700"></h3>
         <p id="wa-resumen" class="text-xs text-slate-600"></p>
       </div>
-      <p class="text-sm text-center text-slate-800">¿Quieres enviar los detalles por WhatsApp al cliente?</p>
+      <p class="text-sm text-center text-slate-800">¿Quieres enviar solo el resumen por WhatsApp?</p>
       <div class="space-y-2">
-        <button onclick="enviarPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">📲 Sí, enviar por WhatsApp</button>
+        <button onclick="enviarTicketPDFPorWhatsApp()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold p-3 rounded-xl text-sm transition">📄 Enviar como PDF (adjunto)</button>
+        <button onclick="enviarPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">📲 Sí, enviar el resumen (texto)</button>
         <button onclick="cerrarModalWhatsApp()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm transition">No, terminar</button>
       </div>
     </div>
@@ -994,7 +1005,19 @@
       <input id="edit-cli-nombre" type="text" placeholder="Nombre del cliente" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
       <input id="edit-cli-telefono" type="tel" placeholder="Teléfono / WhatsApp" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
       <input id="edit-cli-direccion" type="text" placeholder="Dirección" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
-      <input id="edit-cli-gps" type="text" placeholder="GPS (lat, lng)" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <div class="bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
+        <div class="flex justify-between items-center gap-2">
+          <span class="text-[11px] font-semibold text-slate-700">📍 Geolocalización</span>
+          <div class="flex gap-1.5">
+            <button type="button" onclick="obtenerGPS('edit-cli-gps')" class="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg font-semibold">📍 Capturar GPS</button>
+            <button type="button" onclick="verMapaGPS('edit-cli-gps')" class="text-[10px] bg-white border border-slate-300 text-slate-700 px-2.5 py-1 rounded-lg font-semibold">🗺️ Ver mapa</button>
+            <button type="button" onclick="limpiarGPS('edit-cli-gps')" class="text-[10px] bg-white border border-slate-300 text-slate-500 px-2.5 py-1 rounded-lg font-semibold">✖ Quitar</button>
+          </div>
+        </div>
+        <input type="text" id="edit-cli-gps" placeholder="GPS (lat, lng)" class="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-emerald-700 font-mono">
+        <div id="edit-cli-gps-mapa"></div>
+        <p class="text-[10px] text-slate-500">Puedes capturar la ubicación ahora o escribirla a mano. El cambio se sincroniza con los demás dispositivos.</p>
+      </div>
       <div>
         <label class="text-[10px] text-slate-600 block mb-1">Días de visita programada *</label>
         <div class="grid grid-cols-3 gap-2 text-xs">
@@ -1132,11 +1155,13 @@
     <div class="bg-white border border-amber-300 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4 text-center">
       <p class="text-3xl">🧾</p><h3 class="text-lg font-bold text-slate-900">Venta registrada</h3>
       <p id="ticket-resumen" class="text-xs text-slate-600"></p>
-      <p class="text-sm text-slate-800">¿Deseas imprimir el ticket?</p>
+      <p class="text-sm text-slate-800">¿Deseas enviar el ticket en PDF por WhatsApp?</p>
       <div class="space-y-2">
-        <button onclick="generarTicketPDF()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl text-sm">🧾 Sí, generar ticket PDF (58 mm)</button>
+        <button onclick="enviarTicketPDFPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-3 rounded-xl text-sm">📄 Enviar ticket PDF por WhatsApp</button>
+        <button onclick="generarTicketPDF()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl text-sm">⬇️ Solo descargar el PDF</button>
         <button onclick="terminarDespuesTicket()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm">No, continuar</button>
       </div>
+      <p class="text-[10px] text-slate-400">En el celular se abre la hoja de compartir para adjuntar el PDF a WhatsApp. En computadora se descarga el archivo para adjuntarlo manualmente.</p>
     </div>
   </div>
 

@@ -564,6 +564,10 @@ window.iniciarSesionApp = function(rol, datosUsuario) {
   // Cargar datos aislados del negocio / administrador al almacenamiento local
   cargarDatosDelNegocio(usuarioActual);
 
+  // Si el negocio está suspendido (el Root bloqueó al administrador) se avisa
+  // y se deshabilitan las funciones restringidas.
+  if (typeof window.aplicarSuspensionNegocio === 'function') window.aplicarSuspensionNegocio();
+
   const btnAdmin = document.getElementById('btn-nav-admin');
   const btnVendedorNomina = document.getElementById('btn-nav-vendedor-nomina');
   const vendWrap = document.getElementById('cli-vendedor-wrap');
@@ -856,6 +860,38 @@ window.botonMapaGPS = function(gps) {
   return `<a href="${url}" target="_blank" rel="noopener" title="Abrir en Google Maps" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white hover:bg-blue-600 border border-slate-300 hover:border-blue-500 text-base transition" onclick="event.stopPropagation()">🗺️</a>`;
 };
 
+// ============================================================
+// NEGOCIO SUSPENDIDO
+// Cuando el Root bloquea al administrador, el negocio queda suspendido:
+// el vendedor conserva el catálogo y la lectura de sus clientes, pero
+// pierde el historial de ventas y la modificación de clientes.
+// El bloqueo real lo aplican las reglas de Firestore en el servidor.
+// ============================================================
+window.negocioSuspendidoActual = function() {
+  return !!(usuarioActual && usuarioActual.rol === 'vendedor' && usuarioActual.negocioSuspendido === true);
+};
+
+window.aplicarSuspensionNegocio = function() {
+  const banner = document.getElementById('banner-negocio-suspendido');
+  const btnVentas = document.getElementById('btn-nav-ventas-semana');
+  const suspendido = window.negocioSuspendidoActual();
+  if (banner) banner.classList.toggle('hidden', !suspendido);
+  if (btnVentas) {
+    // 'disabled' sobrevive al reinicio de clases que hace cambiarVista()
+    btnVentas.disabled = suspendido;
+    btnVentas.classList.toggle('opacity-40', suspendido);
+    btnVentas.classList.toggle('pointer-events-none', suspendido);
+    btnVentas.setAttribute('title', suspendido
+      ? 'Historial de ventas deshabilitado: el negocio está suspendido'
+      : 'Historial de ventas');
+  }
+  if (suspendido) {
+    const vista = document.getElementById('vista-ventas-semana');
+    if (vista) vista.classList.add('hidden');
+  }
+  return suspendido;
+};
+
 window.renderizarMisClientes = function() {
   const cont = document.getElementById('lista-mis-clientes');
   if (!cont) return;
@@ -873,6 +909,8 @@ window.renderizarMisClientes = function() {
     return;
   }
 
+  const suspendido = window.negocioSuspendidoActual();
+
   cont.innerHTML = lista.map(c => `
     <div class="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-1.5">
       <div class="flex justify-between items-start gap-2">
@@ -885,7 +923,9 @@ window.renderizarMisClientes = function() {
       ${c.direccion ? `<p class="text-[11px] text-slate-600">🏠 ${esc(c.direccion)}</p>` : ''}
       <p class="text-[10px] text-slate-500">Días: ${(c.diasVisita || []).join(', ')}</p>
       <div class="grid grid-cols-2 gap-1.5 pt-1">
-        <button onclick="abrirModalActualizarCliente(${c.id})" class="bg-blue-600/20 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 rounded-lg py-2 text-[10px] font-semibold">✏️ Actualizar datos</button>
+        ${suspendido
+          ? '<button disabled class="bg-slate-200 text-slate-400 border border-slate-200 rounded-lg py-2 text-[10px] font-semibold cursor-not-allowed">✏️ Actualizar datos</button>'
+          : `<button onclick="abrirModalActualizarCliente(${c.id})" class="bg-blue-600/20 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 rounded-lg py-2 text-[10px] font-semibold">✏️ Actualizar datos</button>`}
         <button onclick="abrirModalCreditoCliente(${c.id})" class="bg-amber-600/20 hover:bg-amber-600 text-amber-700 hover:text-white border border-amber-200 rounded-lg py-2 text-[10px] font-semibold">💳 Crédito / Fiado</button>
       </div>
     </div>
@@ -1001,6 +1041,9 @@ let clienteEditandoId = null;
 let clienteAsignandoId = null;
 
 window.abrirModalActualizarCliente = function(id) {
+  if (typeof window.negocioSuspendidoActual === 'function' && window.negocioSuspendidoActual()) {
+    return alert('⛔ No puedes modificar clientes: el negocio está suspendido por el Superadministrador.');
+  }
   const c = clientesDB.find(x => x.id === id); if (!c) return;
   clienteEditandoId = id;
   document.getElementById('edit-cli-nombre').value = c.nombre || '';
@@ -1009,6 +1052,7 @@ window.abrirModalActualizarCliente = function(id) {
   document.getElementById('edit-cli-gps').value = c.gps || '';
   document.querySelectorAll('input[name="edit-dias"]').forEach(cb => cb.checked = (c.diasVisita || []).includes(cb.value));
   document.getElementById('modal-actualizar-cliente').classList.remove('hidden');
+  if (typeof window.pintarMapaGPS === 'function') window.pintarMapaGPS('edit-cli-gps');
 };
 window.cerrarModalCliente = function() { document.getElementById('modal-actualizar-cliente').classList.add('hidden'); clienteEditandoId=null; };
 
@@ -1018,8 +1062,34 @@ window.guardarClienteActualizado = function() {
   if(!document.getElementById('edit-cli-nombre').value.trim()) return alert('Escribe el nombre del cliente.');
   if(!dias.length) return alert('Selecciona al menos un día de visita.');
   c.nombre=document.getElementById('edit-cli-nombre').value.trim(); c.telefono=document.getElementById('edit-cli-telefono').value.trim(); c.direccion=document.getElementById('edit-cli-direccion').value.trim(); c.gps=document.getElementById('edit-cli-gps').value.trim() || 'Sin GPS'; c.diasVisita=dias;
-  localStorage.setItem('clientes_db',JSON.stringify(clientesDB)); cerrarModalCliente(); renderizarMisClientes(); renderizarClientesAdmin(); renderizarAgenda(); toast('✅ Datos del cliente actualizados');
+  guardarClientesDB();
+  guardarClienteEnNube(c);
+  cerrarModalCliente(); renderizarMisClientes(); renderizarClientesAdmin(); renderizarAgenda(); toast('✅ Datos del cliente actualizados');
 };
+
+// Sube el cliente (con su geolocalización) a la nube del negocio
+async function guardarClienteEnNube(cliente) {
+  if (typeof firebase === 'undefined' || !firebase.firestore || !navigator.onLine) return;
+  const tenant = obtenerTenantActual();
+  const nid = negocioIdDe(tenant);
+  if (!nid) return;
+  try {
+    const db = firebase.firestore();
+    const doc = sanitizarParaFirestore({
+      ...cliente,
+      adminId: tenant.adminId,
+      adminEmail: tenant.adminEmail,
+      negocio: tenant.negocio,
+      negocioId: nid,
+      vendedorId: cliente.vendedorId || (usuarioActual && usuarioActual.id) || null
+    });
+    await conTimeout(db.collection('negocios').doc(String(nid)).collection('clientes').doc(String(cliente.id)).set(doc, { merge: true }), 4000);
+    toast('☁️ Cliente sincronizado con la nube');
+  } catch (e) {
+    console.warn('No se pudo sincronizar el cliente:', e && e.message);
+    toast('💾 Guardado en este dispositivo (sin conexión con la nube)', 'warn');
+  }
+}
 
 window.abrirModalAsignarVendedor = function(id) {
   const c=clientesDB.find(x=>x.id===id); if(!c) return; clienteAsignandoId=id;
@@ -2441,10 +2511,12 @@ window.finalizarPedido = function() {
     fechaEntrega: fechaEntregaSel,
     clienteNombre: clienteOperacion.nombre,
     telefono: clienteOperacion.telefono,
-    vendedorNombre: nombreUsuarioActual()
+    vendedorNombre: nombreUsuarioActual(),
+    negocioNombre: (usuarioActual && usuarioActual.negocio) || localStorage.getItem('negocio_nombre') || 'Ventas de Campo'
   };
   cerrarPantallaOperacion();
   renderizarAgenda();
+  ultimaOperacion = op;
   mostrarModalWhatsApp(op);
 };
 
@@ -2532,32 +2604,240 @@ window.terminarDespuesTicket = function() {
   else { toast('✅ Venta registrada correctamente'); ultimaOperacion=null; }
 };
 
+// ============================================================
+// TICKET EN PDF (documento presentable) + envío por WhatsApp
+// ============================================================
+function construirTicketPDF(op) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const W = 210;
+  const M = 18;
+  const anchoUtil = W - M * 2;
+  const AZUL = [30, 64, 175];
+  const AZUL_SUAVE = [219, 234, 254];
+  const GRIS = [100, 116, 139];
+  const NEGRO = [15, 23, 42];
+  const VERDE = [5, 150, 105];
+  const folio = String(op.id || Date.now());
+
+  // ---------- Encabezado ----------
+  doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
+  doc.rect(0, 0, W, 42, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(19);
+  doc.text(String(op.negocioNombre || 'Ventas de Campo'), M, 18, { maxWidth: anchoUtil - 55 });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(219, 234, 254);
+  doc.text('Ropa táctica y equipo de campo', M, 25.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(255, 255, 255);
+  doc.text(op.tipo === 'pedido' ? 'PEDIDO' : 'NOTA DE VENTA', W - M, 17, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(219, 234, 254);
+  doc.text('Folio: ' + folio, W - M, 23, { align: 'right' });
+  doc.text(new Date(op.fecha).toLocaleString('es-MX'), W - M, 28, { align: 'right' });
+
+  let y = 54;
+
+  // ---------- Datos del cliente / venta ----------
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(M, y - 6, anchoUtil, 30, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+  doc.text('CLIENTE', M + 5, y + 1);
+  doc.text('ATENDIÓ', M + 5, y + 12);
+  doc.text('TELÉFONO / WHATSAPP', M + 100, y + 1);
+  doc.text(op.tipo === 'pedido' ? 'FECHA DE ENTREGA' : 'FECHA', M + 100, y + 12);
+  doc.setFontSize(10);
+  doc.setTextColor(NEGRO[0], NEGRO[1], NEGRO[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.text(String(op.clienteNombre || 'Venta mostrador'), M + 5, y + 7, { maxWidth: 90 });
+  doc.setFont('helvetica', 'normal');
+  doc.text(String(op.vendedorNombre || '—'), M + 5, y + 18, { maxWidth: 90 });
+  doc.setFontSize(9);
+  doc.text(String(op.telefono || '—'), M + 100, y + 7);
+  doc.text(op.tipo === 'pedido' ? fechaLegible(op.fechaEntrega) : new Date(op.fecha).toLocaleDateString('es-MX'), M + 100, y + 18);
+  y += 34;
+
+  // ---------- Tabla de productos ----------
+  doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
+  doc.rect(M, y - 6, anchoUtil, 9, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('PRODUCTO', M + 5, y);
+  doc.text('CANT.', W - M - 55, y, { align: 'right' });
+  doc.text('PRECIO', W - M - 30, y, { align: 'right' });
+  doc.text('IMPORTE', W - M - 5, y, { align: 'right' });
+  y += 9;
+
+  const items = Array.isArray(op.items) ? op.items : [];
+  items.forEach((i, idx) => {
+    const desc = String(i.descripcion || 'Producto');
+    const lineas = doc.splitTextToSize(desc, 82);
+    const altoFila = Math.max(7, lineas.length * 4.2 + 3);
+    if (idx % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(M, y - 5.5, anchoUtil, altoFila, 'F');
+    }
+    doc.setTextColor(NEGRO[0], NEGRO[1], NEGRO[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(lineas, M + 5, y);
+    doc.text(fmtNum(i.cantidad), W - M - 55, y, { align: 'right' });
+    doc.text(fmtMoneda(i.precio), W - M - 30, y, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmtMoneda(i.subtotal), W - M - 5, y, { align: 'right' });
+    y += altoFila;
+  });
+
+  if (!items.length) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+    doc.text('Sin productos en este documento', M + 5, y + 2);
+    y += 8;
+  }
+
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.3);
+  doc.line(M, y - 5, W - M, y - 5);
+
+  // ---------- Totales ----------
+  y += 4;
+  const xPanel = W - M - 78;
+  doc.setFillColor(AZUL_SUAVE[0], AZUL_SUAVE[1], AZUL_SUAVE[2]);
+  doc.roundedRect(xPanel, y - 6, 78, 24, 2, 2, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+  doc.text('TOTAL', xPanel + 5, y + 1);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(AZUL[0], AZUL[1], AZUL[2]);
+  doc.text(fmtMoneda(op.total), xPanel + 73, y + 2, { align: 'right' });
+
+  let yp = y + 10;
+  const pagos = [];
+  if (op.metodoPago) pagos.push(['Forma de pago', etiquetaMetodoPago(op.metodoPago)]);
+  if (op.metodoPago === 'efectivo') {
+    pagos.push(['Efectivo recibido', fmtMoneda(op.efectivo)]);
+    pagos.push(['Cambio', fmtMoneda(op.cambio)]);
+  }
+  if (op.saldoPendiente) pagos.push(['Saldo pendiente', fmtMoneda(op.saldoPendiente)]);
+  pagos.forEach((par) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+    doc.text(par[0], xPanel + 5, yp);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(NEGRO[0], NEGRO[1], NEGRO[2]);
+    doc.text(par[1], xPanel + 73, yp, { align: 'right' });
+    yp += 5;
+  });
+
+  // ---------- Notas ----------
+  if (op.anotaciones) {
+    y = Math.max(y + 26, yp + 2);
+    doc.setFillColor(255, 251, 235);
+    doc.setDrawColor(253, 230, 138);
+    doc.roundedRect(M, y, anchoUtil, 16, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(146, 64, 14);
+    doc.text('NOTAS', M + 5, y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(NEGRO[0], NEGRO[1], NEGRO[2]);
+    doc.text(doc.splitTextToSize(String(op.anotaciones), anchoUtil - 10), M + 5, y + 12);
+    y += 22;
+  }
+
+  // ---------- Pie ----------
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(M, 268, W - M, 268);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(VERDE[0], VERDE[1], VERDE[2]);
+  doc.text('¡Gracias por su preferencia!', W / 2, 277, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+  doc.text('Documento generado el ' + new Date().toLocaleString('es-MX'), W / 2, 282, { align: 'center' });
+  doc.text('Folio ' + folio + ' · ' + (op.negocioNombre || 'Ventas de Campo'), W / 2, 286, { align: 'center' });
+
+  return doc;
+}
+
+function nombreArchivoTicket(op) {
+  const quien = String(op.clienteNombre || 'cliente').replace(/[^\w]+/g, '_').slice(0, 20);
+  return 'ticket_' + (op.tipo === 'pedido' ? 'pedido' : 'venta') + '_' + quien + '_' + Date.now() + '.pdf';
+}
+
 window.generarTicketPDF = function() {
-  if(!ultimaOperacion) return;
-  if(!window.jspdf || !window.jspdf.jsPDF) return alert('Generador PDF no disponible.');
-  const op=ultimaOperacion;
-  const { jsPDF }=window.jspdf;
-  const alto=Math.max(90, 58 + op.items.length*9 + 65 + (op.anotaciones ? Math.ceil(String(op.anotaciones).length / 38) * 4 : 0));
-  const doc=new jsPDF({unit:'mm',format:[58,alto],compress:true});
-  let y=7; const x=4;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(String(op.negocioNombre || 'Ventas en Campo'),29,y,{align:'center', maxWidth:50}); y+=5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.text('NOTA DE VENTA',29,y,{align:'center'}); y+=5;
-  doc.line(x,y,54,y); y+=4;
-  doc.setFontSize(7); doc.text(`Fecha: ${new Date(op.fecha).toLocaleString('es-MX')}`,x,y); y+=4;
-  doc.text(`Atiende: ${op.vendedorNombre || 'Usuario'}`,x,y); y+=4;
-  doc.text(`Cliente: ${op.clienteNombre || 'Venta mostrador'}`,x,y); y+=4;
-  doc.line(x,y,54,y); y+=4;
-  doc.setFont('helvetica','bold'); doc.text('PRODUCTO',x,y); doc.text('IMPORTE',54,y,{align:'right'}); y+=4; doc.setFont('helvetica','normal');
-  op.items.forEach(i=>{ const desc=String(i.descripcion||'Producto'); const max=34; const line=doc.splitTextToSize(`${fmtNum(i.cantidad)} x ${desc}`,max); doc.text(line,x,y); doc.text(fmtMoneda(i.subtotal),54,y,{align:'right'}); y += Math.max(4,line.length*3.5); });
-  doc.line(x,y,54,y); y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('TOTAL',x,y); doc.text(fmtMoneda(op.total),54,y,{align:'right'}); y+=5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(7);
-  doc.text(`Pago: ${etiquetaMetodoPago(op.metodoPago)}`,x,y); y+=4;
-  if(op.metodoPago==='efectivo'){ doc.text(`Efectivo: ${fmtMoneda(op.efectivo)}`,x,y); y+=4; doc.text(`Cambio: ${fmtMoneda(op.cambio)}`,x,y); y+=4; }
-  doc.text('¡Gracias por su compra!',29,y,{align:'center'});
-  doc.save(`ticket_${Date.now()}.pdf`);
+  if (!ultimaOperacion) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) return alert('Generador PDF no disponible.');
+  const op = ultimaOperacion;
+  construirTicketPDF(op).save(nombreArchivoTicket(op));
   document.getElementById('modal-ticket').classList.add('hidden');
-  if(op.telefono) mostrarModalWhatsApp(op); else {toast('✅ Ticket PDF generado'); ultimaOperacion=null;}
+  if (op.telefono) mostrarModalWhatsApp(op);
+  else { toast('✅ Ticket PDF generado'); ultimaOperacion = null; }
 };
+
+// Envía el ticket como PDF adjunto por WhatsApp.
+// En el celular abre la hoja de compartir: eliges WhatsApp y se adjunta el PDF.
+// En escritorio (donde no se puede adjuntar) descarga el PDF y abre WhatsApp.
+window.enviarTicketPDFPorWhatsApp = async function() {
+  if (!ultimaOperacion) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) return alert('Generador PDF no disponible.');
+  const op = ultimaOperacion;
+  const doc = construirTicketPDF(op);
+  const archivo = nombreArchivoTicket(op);
+  const texto = 'Hola ' + (op.clienteNombre || '') + ' 👋\nTe enviamos tu ' + (op.tipo === 'pedido' ? 'pedido' : 'ticket de venta') + ' por ' + fmtMoneda(op.total) + '.\n¡Gracias por tu preferencia!';
+
+  try {
+    const blob = doc.output('blob');
+    const archivoPdf = new File([blob], archivo, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
+      await navigator.share({ files: [archivoPdf], title: 'Ticket de venta', text: texto });
+      cerrarModalesTicket();
+      toast('✅ Ticket PDF enviado');
+      ultimaOperacion = null;
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // el usuario canceló el diálogo
+    console.warn('No se pudo compartir el PDF:', e && e.message);
+  }
+
+  // Respaldo: se descarga el PDF y se abre WhatsApp con el resumen
+  doc.save(archivo);
+  const numero = telefonoWhatsApp(op.telefono);
+  if (numero.length >= 10) {
+    window.open('https://wa.me/' + numero + '?text=' + encodeURIComponent(texto + '\n\n(Adjunta el archivo PDF que se acaba de descargar.)'), '_blank');
+  }
+  cerrarModalesTicket();
+  toast('📄 Ticket PDF descargado');
+};
+
+// Cierra los modales de ticket y de WhatsApp
+function cerrarModalesTicket() {
+  const mt = document.getElementById('modal-ticket');
+  const mw = document.getElementById('modal-whatsapp');
+  if (mt) mt.classList.add('hidden');
+  if (mw) mw.classList.add('hidden');
+}
+
+// Expuesto para pruebas y soporte
+window.construirTicketPDF = construirTicketPDF;
+window.nombreArchivoTicket = nombreArchivoTicket;
 
 function telefonoWhatsApp(tel) {
   let digitos = String(tel || '').replace(/\D/g, '');
@@ -2605,15 +2885,64 @@ window.enviarPorWhatsApp = function() {
   cerrarModalWhatsApp();
 };
 
-window.obtenerGPS = function() {
-  const inputGps = document.getElementById('cli-gps');
+window.obtenerGPS = function(campoId) {
+  const inputGps = document.getElementById(campoId || 'cli-gps');
+  if (!inputGps) return;
+  const valorPrevio = inputGps.value;
   inputGps.value = "Obteniendo...";
-  if ("geolocation" in navigator) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => inputGps.value = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
-      () => inputGps.value = "Error al capturar GPS"
-    );
+  if (!("geolocation" in navigator)) {
+    inputGps.value = valorPrevio;
+    return alert('Este dispositivo no tiene GPS disponible. Escribe las coordenadas a mano.');
   }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      inputGps.value = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+      if (typeof window.pintarMapaGPS === 'function') window.pintarMapaGPS(campoId);
+    },
+    (err) => {
+      inputGps.value = valorPrevio;
+      const mensaje = (err && err.code === 1)
+        ? 'Permiso de ubicación denegado. Actívalo en el candado de la barra de direcciones y vuelve a capturar.'
+        : 'No se pudo obtener la ubicación. Inténtalo de nuevo en un lugar abierto.';
+      alert(mensaje);
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+};
+
+// Abre la ubicación capturada en Google Maps
+window.verMapaGPS = function(campoId) {
+  const inputGps = document.getElementById(campoId || 'cli-gps');
+  const coords = String(inputGps ? inputGps.value : '').trim();
+  if (!coords || coords === 'Sin GPS' || coords.indexOf('Obteniendo') === 0) {
+    return alert('Todavía no hay coordenadas capturadas.');
+  }
+  const partes = coords.split(',').map(x => parseFloat(String(x).trim()));
+  if (partes.length < 2 || isNaN(partes[0]) || isNaN(partes[1])) {
+    return alert('Las coordenadas no son válidas. Usa el formato: latitud, longitud');
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${partes[0]},${partes[1]}`, '_blank', 'noopener');
+};
+
+// Borra las coordenadas capturadas
+window.limpiarGPS = function(campoId) {
+  const inputGps = document.getElementById(campoId || 'cli-gps');
+  if (inputGps) inputGps.value = 'Sin GPS';
+};
+
+// Pinta un mini-mapa con la posición capturada
+window.pintarMapaGPS = function(campoId) {
+  const id = campoId || 'cli-gps';
+  const inputGps = document.getElementById(id);
+  const mapa = document.getElementById(id + '-mapa');
+  if (!inputGps || !mapa) return;
+  const coords = String(inputGps.value || '').trim();
+  if (!coords || coords === 'Sin GPS' || coords.indexOf('Obteniendo') === 0) { mapa.innerHTML = ''; return; }
+  const partes = coords.split(',').map(x => parseFloat(String(x).trim()));
+  if (partes.length < 2 || isNaN(partes[0]) || isNaN(partes[1])) { mapa.innerHTML = ''; return; }
+  const d = 0.004;
+  const bbox = `${partes[0] - d},${partes[1] - d},${partes[0] + d},${partes[1] + d}`;
+  mapa.innerHTML = `<iframe title="Mapa" class="w-full h-28 rounded-lg border border-slate-200" src="https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${partes[0]},${partes[1]}"></iframe>`;
 };
 
 window.actualizarBotonesModoVista = function() {
@@ -2749,6 +3078,10 @@ window.cambiarVista = function(vista) {
     document.getElementById('btn-nav-productos').className = "flex flex-col items-center text-blue-600";
     cambiarSubVistaProductos(subVistaProdActual);
   } else if (vista === 'ventas-semana') {
+    if (typeof window.negocioSuspendidoActual === 'function' && window.negocioSuspendidoActual()) {
+      alert('⛔ El historial de ventas está deshabilitado porque el negocio está suspendido por el Superadministrador.');
+      return;
+    }
     document.getElementById('vista-ventas-semana').classList.remove('hidden');
     if (btnVentasSemana) btnVentasSemana.className = "flex flex-col items-center text-blue-600";
     renderizarVentasSemana();
@@ -2765,6 +3098,9 @@ window.cambiarVista = function(vista) {
     if (btnAdmin) btnAdmin.className = "flex flex-col items-center text-emerald-600";
     cambiarSubVistaAdmin('vendedores');
   }
+
+  // Reaplicar el estado de suspensión (cambiarVista reinicia las clases)
+  if (typeof window.aplicarSuspensionNegocio === 'function') window.aplicarSuspensionNegocio();
 };
 
 window.abrirModalSync = function() {
@@ -2950,6 +3286,25 @@ window.sincronizarAhora = async function() {
 
     let subidaCloudOk = false;
     let descargaCloudOk = false;
+
+    // -------------------------------------------------------
+    // ESTADO DEL NEGOCIO: si el Root bloqueó al administrador, el
+    // negocio queda suspendido y el vendedor pierde el historial de
+    // ventas y la modificación de clientes.
+    // -------------------------------------------------------
+    if (db && navigator.onLine && miNegocioId && miNegocioId !== 'adm_1' && rolActual === 'vendedor') {
+      try {
+        const docNeg = await conTimeout(db.collection('negocios').doc(String(miNegocioId)).get(), 4000);
+        const suspendido = !!(docNeg.exists && docNeg.data().suspendido === true);
+        if (usuarioActual) usuarioActual.negocioSuspendido = suspendido;
+        if (typeof window.aplicarSuspensionNegocio === 'function') window.aplicarSuspensionNegocio();
+        if (suspendido) {
+          log('⛔ Tu negocio está suspendido: sin historial de ventas ni edición de clientes.', 'warn');
+        }
+      } catch (eNeg) {
+        console.warn('Estado del negocio:', eNeg.message);
+      }
+    }
 
     if (rolActual === 'admin') {
       // =======================================================
@@ -3298,6 +3653,22 @@ window.loginUsuario = async function(userVal, passVal) {
       } catch (eVend) {
         if (String(eVend.message || '').includes('suspendido')) throw eVend;
         console.warn("Perfil vendedor:", eVend.message);
+      }
+    }
+
+    // 3.B.bis Estado del negocio. Si el Root bloqueó al administrador, el
+    //         negocio queda suspendido: el vendedor conserva el catálogo y
+    //         la lectura de sus clientes, pero pierde el historial de ventas
+    //         y la modificación de clientes (las reglas lo bloquean en el
+    //         servidor, esto solo es la señal para la interfaz).
+    if (perfil && perfil.rol === 'vendedor' && perfil.negocioId) {
+      try {
+        const docNeg = await conTimeout(db.collection('negocios').doc(String(perfil.negocioId)).get(), 4000);
+        if (docNeg.exists && docNeg.data().suspendido === true) {
+          perfil.negocioSuspendido = true;
+        }
+      } catch (eNeg) {
+        console.warn("Estado del negocio:", eNeg.message);
       }
     }
 
@@ -4112,6 +4483,23 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
                 vendedoresDB.find(v => String(v.id) === String(id));
   if (!usuario) return;
 
+  const rolUsuario = usuario.rol || rol || 'admin';
+  const esAdmin = rolUsuario === 'admin';
+  const vaABloquear = usuario.accesoActivo !== false;
+  const nombreUsuario = usuario.nombreCompleto || usuario.nombre || usuario.usuario || id;
+
+  // Aviso claro de lo que va a pasar antes de aplicar el cambio
+  if (vaABloquear) {
+    const mensaje = esAdmin
+      ? `Se suspenderá TODO el negocio de "${nombreUsuario}":\n\n` +
+        `• El administrador no podrá entrar a su cuenta ni ver sus datos.\n` +
+        `• Sus vendedores dejarán de revisar el historial de ventas.\n` +
+        `• Sus vendedores no podrán modificar clientes ni registrar ventas.\n\n` +
+        `¿Deseas continuar?`
+      : `Se suspenderá el acceso de "${nombreUsuario}".\n\n¿Deseas continuar?`;
+    if (!confirm(mensaje)) return;
+  }
+
   usuario.accesoActivo = !usuario.accesoActivo;
   const nuevoEstado = usuario.accesoActivo;
 
@@ -4120,20 +4508,37 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
 
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
-      const col = (usuario.rol || rol) === 'admin' ? 'admins' : 'vendedores';
-      await firebase.firestore().collection(col).doc(String(usuario.id)).set({ accesoActivo: nuevoEstado }, { merge: true });
-      if ((usuario.rol || rol) === 'vendedor') {
-        const nidAcc = usuario.negocioId || usuario.adminAuthUid;
-        if (nidAcc) {
-          await firebase.firestore().collection('negocios').doc(String(nidAcc)).collection('vendedores').doc(String(usuario.id)).set({ accesoActivo: nuevoEstado }, { merge: true });
-        }
+      const dbFs = firebase.firestore();
+      const col = esAdmin ? 'admins' : 'vendedores';
+      const nid = usuario.negocioId || usuario.adminAuthUid || (esAdmin ? (usuario.authUid || usuario.id) : null);
+      const batch = dbFs.batch();
+
+      // Estado de acceso del usuario
+      batch.set(dbFs.collection(col).doc(String(usuario.id)), { accesoActivo: nuevoEstado }, { merge: true });
+
+      if (esAdmin && nid) {
+        // El negocio queda SUSPENDIDO: los vendedores pierden el historial
+        // de ventas y no pueden modificar clientes (lo aplican las reglas).
+        batch.set(dbFs.collection('negocios').doc(String(nid)), { suspendido: !nuevoEstado }, { merge: true });
+      } else if (!esAdmin && nid) {
+        // Ficha del vendedor dentro de su negocio
+        batch.set(dbFs.collection('negocios').doc(String(nid)).collection('vendedores').doc(String(usuario.id)), { accesoActivo: nuevoEstado }, { merge: true });
       }
+
+      await batch.commit();
     } catch (e) {
       console.warn("Firestore toggle acceso error:", e);
+      toast('⚠️ No se pudo guardar el cambio en la nube', 'warn');
+      renderizarAdminsEnLista();
+      return;
     }
   }
 
-  toast(nuevoEstado ? "🔓 Acceso activado" : "🔒 Acceso suspendido");
+  toast(nuevoEstado
+    ? "🔓 Acceso activado"
+    : (esAdmin
+        ? "🔒 Negocio suspendido (vendedores sin historial de ventas ni edición de clientes)"
+        : "🔒 Acceso suspendido"));
   renderizarAdminsEnLista();
 };
 

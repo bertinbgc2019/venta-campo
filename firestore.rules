@@ -10,9 +10,14 @@ service cloud.firestore {
     // viven en  negocios/{negocioId}/{coleccion}/{docId}.
     //
     //   Root    -> ve absolutely todo
-    //   Admin   -> ve y edita SOLO su negocio
+    //   Admin   -> ve y edita SOLO su negocio (y solo si NO está bloqueado)
     //   Vendedor-> lee el catálogo de SU negocio y SOLO los documentos
     //             que le pertenecen (vendedorId == su UID)
+    //
+    // BLOQUEO EN CASCADA (Root -> Administrador):
+    //   Cuando el Root bloquea a un administrador, ese administrador
+    //   pierde TODO acceso a los datos de su negocio y sus vendedores
+    //   quedan sin historial de ventas y sin poder modificar clientes.
     // ============================================================
 
     // ------------------------------------------------------------
@@ -39,11 +44,36 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------
+    // Estado del negocio
+    // ------------------------------------------------------------
+
+    // El negocio está SUSPENDIDO cuando el Root bloquea a su
+    // administrador. La fuente de verdad es el perfil del administrador
+    // (doc id = UID del admin = negocioId), campo "accesoActivo".
+    function negocioSuspendido(negocioId) {
+      return exists(/databases/$(database)/documents/admins/$(negocioId))
+        && get(/databases/$(database)/documents/admins/$(negocioId)).data.get('accesoActivo', true) == false;
+    }
+
+    // El administrador solo opera mientras su negocio NO esté suspendido.
+    // Un administrador bloqueado no puede ni leer ni escribir sus datos
+    // (y tampoco puede auto-reactivarse: no puede escribir su perfil).
+    function esAdminActivoDe(negocioId) {
+      return esAdminDe(negocioId) && !negocioSuspendido(negocioId);
+    }
+
+    // ------------------------------------------------------------
     // Perfil del administrador (doc id = UID del admin = negocioId)
     // ------------------------------------------------------------
     match /admins/{adminUid} {
+      // Lectura: siempre permitida para el propio admin (la app necesita
+      // leer su perfil para mostrarle el aviso de "acceso suspendido").
       allow read: if esRoot() || (request.auth != null && request.auth.uid == adminUid);
-      allow write: if esRoot() || (request.auth != null && request.auth.uid == adminUid);
+
+      // Escritura: el admin solo puede editar su perfil mientras esté
+      // activo. Si está bloqueado, únicamente el Root puede modificarlo
+      // (así el admin no puede desbloquearse solo).
+      allow write: if esRoot() || (esAdminActivoDe(adminUid));
     }
 
     // ------------------------------------------------------------
@@ -53,18 +83,19 @@ service cloud.firestore {
     match /vendedores/{vendedorUid} {
       allow read: if esRoot()
         || (request.auth != null && request.auth.uid == vendedorUid)
-        || (request.auth != null && resource.data.negocioId == request.auth.uid);
+        || esAdminActivoDe(resource.data.negocioId);
 
       allow create: if esRoot()
-        || (request.auth != null && request.resource.data.negocioId == request.auth.uid);
+        || esAdminActivoDe(request.resource.data.negocioId);
 
       allow update: if esRoot()
-        || (request.auth != null && resource.data.negocioId == request.auth.uid)
+        || esAdminActivoDe(resource.data.negocioId)
         || (request.auth != null && request.auth.uid == vendedorUid
-            && request.resource.data.negocioId == resource.data.negocioId);
+            && request.resource.data.negocioId == resource.data.negocioId
+            && request.resource.data.get('accesoActivo', true) == resource.data.get('accesoActivo', true));
 
       allow delete: if esRoot()
-        || (request.auth != null && resource.data.negocioId == request.auth.uid);
+        || esAdminActivoDe(resource.data.negocioId);
     }
 
     // ------------------------------------------------------------
@@ -75,24 +106,25 @@ service cloud.firestore {
     // ------------------------------------------------------------
     match /negocios/{negocioId}/vendedores/{vendedorUid} {
       allow read: if esRoot()
-        || esAdminDe(negocioId)
+        || esAdminActivoDe(negocioId)
         || (request.auth != null && request.auth.uid == vendedorUid && esVendedorDe(negocioId));
 
       allow create, update: if esRoot()
-        || esAdminDe(negocioId)
+        || esAdminActivoDe(negocioId)
         || (request.auth != null && request.auth.uid == vendedorUid
             && esVendedorDe(negocioId)
-            && request.resource.data.negocioId == resource.data.negocioId);
+            && request.resource.data.negocioId == resource.data.negocioId
+            && request.resource.data.get('accesoActivo', true) == resource.data.get('accesoActivo', true));
 
-      allow delete: if esRoot() || esAdminDe(negocioId);
+      allow delete: if esRoot() || esAdminActivoDe(negocioId);
     }
 
     // ------------------------------------------------------------
     // Ficha del negocio (documento en negocios/{negocioId})
     // ------------------------------------------------------------
     match /negocios/{negocioId} {
-      allow read: if esRoot() || esAdminDe(negocioId) || esVendedorDe(negocioId);
-      allow write: if esRoot() || esAdminDe(negocioId);
+      allow read: if esRoot() || esAdminActivoDe(negocioId) || esVendedorDe(negocioId);
+      allow write: if esRoot() || esAdminActivoDe(negocioId);
     }
 
     // ------------------------------------------------------------
@@ -102,38 +134,47 @@ service cloud.firestore {
     // Regla separada para no depender de `resource` en listados.
     // ------------------------------------------------------------
     match /negocios/{negocioId}/productos/{productoId} {
-      allow read: if esRoot() || esAdminDe(negocioId) || esVendedorDe(negocioId);
-      allow write: if esRoot() || esAdminDe(negocioId);
+      allow read: if esRoot() || esAdminActivoDe(negocioId) || esVendedorDe(negocioId);
+      allow write: if esRoot() || esAdminActivoDe(negocioId);
     }
 
     // ------------------------------------------------------------
     // RESTO DE DATOS DEL NEGOCIO
-    // (clientes, ventas, nóminas, vendedores, ...)
+    // (clientes, ventas, nóminas, ...)
     //
     //   Lectura : Root y el admin ven todo su negocio.
     //             El vendedor ve SOLO los documentos que le pertenecen
     //             (vendedorId == su UID). Para listar, la consulta
     //             debe traer ese filtro; el servidor lo exige.
+    //             Si el negocio está SUSPENDIDO el vendedor pierde
+    //             además el HISTORIAL DE VENTAS.
     //   Escritura: El admin escribe todo su negocio.
     //             El vendedor sólo crea/actualiza documentos propios.
+    //             Con el negocio suspendido NO puede escribir (no puede
+    //             modificar clientes ni registrar ventas).
     //   Borrado : Sólo Root y el admin del negocio.
     // ------------------------------------------------------------
     match /negocios/{negocioId}/{coleccion}/{docId} {
       allow read: if esRoot()
-        || esAdminDe(negocioId)
-        || (esVendedorDe(negocioId) && resource.data.vendedorId == request.auth.uid);
-
-      allow create: if esRoot()
-        || esAdminDe(negocioId)
-        || (esVendedorDe(negocioId) && request.resource.data.vendedorId == request.auth.uid);
-
-      allow update: if esRoot()
-        || esAdminDe(negocioId)
+        || esAdminActivoDe(negocioId)
         || (esVendedorDe(negocioId)
             && resource.data.vendedorId == request.auth.uid
-            && request.resource.data.vendedorId == request.auth.uid);
+            && (coleccion != 'ventas' || !negocioSuspendido(negocioId)));
 
-      allow delete: if esRoot() || esAdminDe(negocioId);
+      allow create: if esRoot()
+        || esAdminActivoDe(negocioId)
+        || (esVendedorDe(negocioId)
+            && request.resource.data.vendedorId == request.auth.uid
+            && !negocioSuspendido(negocioId));
+
+      allow update: if esRoot()
+        || esAdminActivoDe(negocioId)
+        || (esVendedorDe(negocioId)
+            && resource.data.vendedorId == request.auth.uid
+            && request.resource.data.vendedorId == request.auth.uid
+            && !negocioSuspendido(negocioId));
+
+      allow delete: if esRoot() || esAdminActivoDe(negocioId);
     }
 
     // ------------------------------------------------------------

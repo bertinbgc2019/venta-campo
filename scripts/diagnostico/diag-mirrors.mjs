@@ -1,0 +1,13 @@
+﻿import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+const clave = JSON.parse(readFileSync(resolve(process.cwd(), "ventas-campo-92a4c-firebase-adminsdk-fbsvc-1f54aa407d.json"), "utf8"));
+initializeApp({ credential: cert(clave), projectId: "ventas-campo-92a4c" });
+const db = getFirestore();
+const NID = "0pzdWIPLKRNgQbpoQ1bh58c3aju2";
+const v = await db.collection("negocios").doc(NID).collection("vendedores").get();
+console.log("Fichas en negocios/" + NID + "/vendedores:", v.size);
+for (const d of v.docs) console.log("  ", d.id, "|", d.data().nombre, "| accesoActivo:", d.data().accesoActivo);
+const n = await db.collection("negocios").doc(NID).get();
+console.log("negocios/" + NID + ":", JSON.stringify(n.data()));

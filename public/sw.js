@@ -1,6 +1,6 @@
 // Service Worker - Ventas en Campo (PWA)
-// Versión 3 con invalidación de caché antigua y compatibilidad con bundles de producción
-const CACHE_NAME = 'ventas-local-v3';
+// Versión 4 con invalidación de caché antigua y compatibilidad con bundles de producción
+const CACHE_NAME = 'ventas-local-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
