@@ -191,6 +191,7 @@
           <span id="sync-badge" class="hidden absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-[9px] font-bold w-4 h-4 rounded-full items-center justify-center">•</span>
         </button>
         <button onclick="alternarModoVista()" id="btn-modo-vista" class="btn-modo-vista" title="Cambiar vista">🖥️ PC</button>
+        <button onclick="abrirModalCambiarMiClave()" id="btn-cambiar-clave" title="Cambiar mi contraseña" class="text-xs bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1 rounded-lg hover:bg-slate-100 font-semibold">🔑</button>
         <button onclick="cerrarSesion()" class="text-xs bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-100 font-semibold">
           Salir
         </button>
@@ -1030,6 +1031,21 @@
       <input id="reset-password-nueva" type="password" autocomplete="new-password" placeholder="Nueva contraseña" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
       <input id="reset-password-confirmar" type="password" autocomplete="new-password" placeholder="Confirmar nueva contraseña" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
       <button onclick="guardarRestablecerPassword()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold p-2.5 rounded-xl text-xs">Guardar nueva contraseña</button>
+    </div>
+  </div>
+
+  <!-- MODAL: CAMBIAR MI PROPIA CONTRASEÑA -->
+  <div id="modal-cambiar-mi-clave" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[95] flex items-center justify-center p-4">
+    <div class="bg-white border border-blue-300 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-blue-700">🔑 Cambiar mi contraseña</h3>
+        <button onclick="cerrarModalCambiarMiClave()" class="text-slate-600">✕</button>
+      </div>
+      <p class="text-xs text-slate-600">Se actualiza directamente en Firebase Authentication. Necesitas tu contraseña actual para confirmar el cambio.</p>
+      <input id="mi-clave-actual" type="password" autocomplete="current-password" placeholder="Contraseña actual" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="mi-clave-nueva" type="password" autocomplete="new-password" placeholder="Nueva contraseña (mínimo 6 caracteres)" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <input id="mi-clave-confirmar" type="password" autocomplete="new-password" placeholder="Confirmar nueva contraseña" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-900">
+      <button onclick="guardarCambiarMiClave()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold p-2.5 rounded-xl text-xs">Guardar nueva contraseña</button>
     </div>
   </div>
 

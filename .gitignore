@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Claves de servicio de Firebase: NUNCA subir a GitHub
+*-firebase-adminsdk-*.json
+serviceAccountKey.json
+serviceAccount*.json
+.firebase/
+vite-dev.err
+vite-dev.log

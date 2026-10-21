@@ -1,16 +1,21 @@
 // ==========================================
 // firebase-config.js - CONEXIÓN REAL A FIREBASE
 // ==========================================
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+// NOTA: este archivo NO lo carga la aplicación (index.html usa el SDK
+// compat directamente en src/app.js). Se conserva como referencia.
+// La seguridad real y el aislamiento multi-negocio viven en
+// firestore.rules, no aquí.
+// ==========================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc,
   onSnapshot, query, where, orderBy, updateDoc, deleteDoc,
-  enableMultiTabIndexedDbPersistence, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // 🔑 CREDENCIALES REALES DE FIREBASE
 export const firebaseConfig = {
@@ -31,7 +36,6 @@ try {
   app = initializeApp(firebaseConfig);
   authInstance = getAuth(app);
   dbInstance = getFirestore(app);
-  enableMultiTabIndexedDbPersistence(dbInstance).catch(() => {});
 } catch (e) {
   console.warn('Firebase init warning:', e);
 }
@@ -51,75 +55,14 @@ function formatearEmail(usuarioOCorreo) {
 // ==========================================
 // AUTENTICACIÓN
 // ==========================================
+// Solo Firebase Auth valida credenciales. Las contraseñas ya NO se
+// comparan contra registros en localStorage (eso permitía entrar sin
+// credenciales válidas y con roles inventados en el cliente).
 export async function loginUsuario(email, password) {
+  if (!auth) throw new Error("Firebase Auth no disponible");
   const emailNorm = formatearEmail(email);
   const pass = String(password || '').trim();
-
-  // 1. Intentar con Firebase Auth si está conectado
-  if (auth) {
-    try {
-      const res = await signInWithEmailAndPassword(auth, emailNorm, pass);
-      return res;
-    } catch (err) {
-      console.warn("Intento Firebase Auth falló:", err.code, err.message);
-
-      // Si el error es auth/user-not-found y es un usuario demo o existente localmente,
-      // intentamos registrarlo o autenticarlo localmente
-      const rawUser = String(email).trim().toLowerCase();
-      
-      // Permitir login para usuarios demo conocidos o usuarios en localStorage
-      const vendedoresLocal = JSON.parse(localStorage.getItem('vendedores_db') || '[]');
-      const vendLocal = vendedoresLocal.find(v => 
-        (v.usuario && v.usuario.toLowerCase() === rawUser) || 
-        (v.email && v.email.toLowerCase() === rawUser) ||
-        (v.usuario && v.usuario.toLowerCase() === emailNorm)
-      );
-
-      if (vendLocal && (vendLocal.password === pass || !vendLocal.password)) {
-        console.log("Autenticado mediante registro local de vendedores:", vendLocal);
-        return {
-          user: {
-            uid: vendLocal.id || 'vend-local-' + Date.now(),
-            email: vendLocal.email || emailNorm,
-            displayName: vendLocal.nombre || 'Vendedor'
-          }
-        };
-      }
-
-      const adminsLocal = JSON.parse(localStorage.getItem('admins_db') || '[]');
-      const admLocal = adminsLocal.find(a => 
-        (a.usuario && a.usuario.toLowerCase() === rawUser) || 
-        (a.email && a.email.toLowerCase() === rawUser) ||
-        (a.usuario && a.usuario.toLowerCase() === emailNorm)
-      );
-
-      if (admLocal && (admLocal.password === pass || pass === '123456' || pass === 'admin123')) {
-        console.log("Autenticado mediante registro local de administradores:", admLocal);
-        return {
-          user: {
-            uid: admLocal.id || 'adm-local-' + Date.now(),
-            email: admLocal.email || emailNorm,
-            displayName: admLocal.nombreCompleto || 'Administrador'
-          }
-        };
-      }
-
-      // Root demo fallback
-      if ((rawUser === 'root' || rawUser === 'gnet' || rawUser.includes('root')) && (pass === '123456' || pass === 'root' || pass === 'GNET')) {
-        return {
-          user: {
-            uid: 'root-superadmin-01',
-            email: 'root@gnet.com',
-            displayName: 'Root SuperAdmin'
-          }
-        };
-      }
-
-      throw err;
-    }
-  }
-
-  throw new Error("Firebase Auth no disponible");
+  return await signInWithEmailAndPassword(auth, emailNorm, pass);
 }
 
 export async function logoutUsuario() {
@@ -346,7 +289,6 @@ export async function eliminarAdministradorFirebase(id) {
   if (db) {
     try {
       await deleteDoc(doc(db, "admins", id));
-      await deleteDoc(doc(db, "usuarios", id));
     } catch (e) {
       console.warn("delete admin err:", e);
     }
@@ -358,9 +300,9 @@ export async function eliminarAdministradorFirebase(id) {
 export async function obtenerUsuarioFirebase(uid) {
   if (!db) return null;
   try {
-    let docSnap = await getDoc(doc(db, "usuarios", uid));
+    let docSnap = await getDoc(doc(db, "admins", uid));
     if (docSnap.exists()) return { id: docSnap.id, ...docSnap.data() };
-    docSnap = await getDoc(doc(db, "admins", uid));
+    docSnap = await getDoc(doc(db, "vendedores", uid));
     if (docSnap.exists()) return { id: docSnap.id, ...docSnap.data() };
   } catch (e) {
     console.warn("obtenerUsuarioFirebase err:", e);

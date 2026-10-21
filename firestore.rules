@@ -1,9 +1,146 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Permitir lectura y escritura para la sincronización del punto de venta en campo
+
+    // ============================================================
+    // AISLAMIENTO MULTI-NEGOCIO
+    //
+    // Cada administrador (negocio) se identifica con su propio UID de
+    // Firebase Auth. Ese UID es tambien el "negocioId": todos sus datos
+    // viven en  negocios/{negocioId}/{coleccion}/{docId}.
+    //
+    //   Root    -> ve absolutely todo
+    //   Admin   -> ve y edita SOLO su negocio
+    //   Vendedor-> lee el catálogo de SU negocio y SOLO los documentos
+    //             que le pertenecen (vendedorId == su UID)
+    // ============================================================
+
+    // ------------------------------------------------------------
+    // Identidad
+    // ------------------------------------------------------------
+
+    // Superadministrador. Se reconoce por el claim "root" (asignado con
+    // el Admin SDK) y, como respaldo, por su correo oficial.
+    function esRoot() {
+      return request.auth != null
+        && (request.auth.token.root == true
+            || request.auth.token.email == 'root@ventas.com');
+    }
+
+    // El usuario autenticado ES el administrador de este negocio.
+    function esAdminDe(negocioId) {
+      return request.auth != null && request.auth.uid == negocioId;
+    }
+
+    // El usuario autenticado es un vendedor registrado en este negocio.
+    function esVendedorDe(negocioId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/negocios/$(negocioId)/vendedores/$(request.auth.uid));
+    }
+
+    // ------------------------------------------------------------
+    // Perfil del administrador (doc id = UID del admin = negocioId)
+    // ------------------------------------------------------------
+    match /admins/{adminUid} {
+      allow read: if esRoot() || (request.auth != null && request.auth.uid == adminUid);
+      allow write: if esRoot() || (request.auth != null && request.auth.uid == adminUid);
+    }
+
+    // ------------------------------------------------------------
+    // Espejo de perfiles de vendedores (doc id = UID de Auth).
+    // Permite el login directo por UID y que Root liste el directorio.
+    // ------------------------------------------------------------
+    match /vendedores/{vendedorUid} {
+      allow read: if esRoot()
+        || (request.auth != null && request.auth.uid == vendedorUid)
+        || (request.auth != null && resource.data.negocioId == request.auth.uid);
+
+      allow create: if esRoot()
+        || (request.auth != null && request.resource.data.negocioId == request.auth.uid);
+
+      allow update: if esRoot()
+        || (request.auth != null && resource.data.negocioId == request.auth.uid)
+        || (request.auth != null && request.auth.uid == vendedorUid
+            && request.resource.data.negocioId == resource.data.negocioId);
+
+      allow delete: if esRoot()
+        || (request.auth != null && resource.data.negocioId == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------
+    // Ficha del vendedor DENTRO de su negocio.
+    // El vendedor puede consultar y actualizar la SUYA propia
+    // (y sólo si ya pertenece a ese negocio); el administrador
+    // gestiona todas las de su negocio.
+    // ------------------------------------------------------------
+    match /negocios/{negocioId}/vendedores/{vendedorUid} {
+      allow read: if esRoot()
+        || esAdminDe(negocioId)
+        || (request.auth != null && request.auth.uid == vendedorUid && esVendedorDe(negocioId));
+
+      allow create, update: if esRoot()
+        || esAdminDe(negocioId)
+        || (request.auth != null && request.auth.uid == vendedorUid
+            && esVendedorDe(negocioId)
+            && request.resource.data.negocioId == resource.data.negocioId);
+
+      allow delete: if esRoot() || esAdminDe(negocioId);
+    }
+
+    // ------------------------------------------------------------
+    // Ficha del negocio (documento en negocios/{negocioId})
+    // ------------------------------------------------------------
+    match /negocios/{negocioId} {
+      allow read: if esRoot() || esAdminDe(negocioId) || esVendedorDe(negocioId);
+      allow write: if esRoot() || esAdminDe(negocioId);
+    }
+
+    // ------------------------------------------------------------
+    // CATÁLOGO DEL NEGOCIO
+    // Lo escribe el administrador; todos los vendedores de SU negocio
+    // pueden leerlo, pero ninguno puede modificarlo.
+    // Regla separada para no depender de `resource` en listados.
+    // ------------------------------------------------------------
+    match /negocios/{negocioId}/productos/{productoId} {
+      allow read: if esRoot() || esAdminDe(negocioId) || esVendedorDe(negocioId);
+      allow write: if esRoot() || esAdminDe(negocioId);
+    }
+
+    // ------------------------------------------------------------
+    // RESTO DE DATOS DEL NEGOCIO
+    // (clientes, ventas, nóminas, vendedores, ...)
+    //
+    //   Lectura : Root y el admin ven todo su negocio.
+    //             El vendedor ve SOLO los documentos que le pertenecen
+    //             (vendedorId == su UID). Para listar, la consulta
+    //             debe traer ese filtro; el servidor lo exige.
+    //   Escritura: El admin escribe todo su negocio.
+    //             El vendedor sólo crea/actualiza documentos propios.
+    //   Borrado : Sólo Root y el admin del negocio.
+    // ------------------------------------------------------------
+    match /negocios/{negocioId}/{coleccion}/{docId} {
+      allow read: if esRoot()
+        || esAdminDe(negocioId)
+        || (esVendedorDe(negocioId) && resource.data.vendedorId == request.auth.uid);
+
+      allow create: if esRoot()
+        || esAdminDe(negocioId)
+        || (esVendedorDe(negocioId) && request.resource.data.vendedorId == request.auth.uid);
+
+      allow update: if esRoot()
+        || esAdminDe(negocioId)
+        || (esVendedorDe(negocioId)
+            && resource.data.vendedorId == request.auth.uid
+            && request.resource.data.vendedorId == request.auth.uid);
+
+      allow delete: if esRoot() || esAdminDe(negocioId);
+    }
+
+    // ------------------------------------------------------------
+    // Todo lo demás queda DENEGADO
+    // ------------------------------------------------------------
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

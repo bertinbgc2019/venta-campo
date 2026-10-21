@@ -101,7 +101,8 @@ function obtenerTenantActual() {
       adminId: String(adminPersonalizado?.id || 'adm_1'),
       adminAuthUid: String(adminPersonalizado?.authUid || ''),
       adminEmail: (adminPersonalizado?.email || adminPersonalizado?.usuario || 'admin@ejemplo.com').toLowerCase(),
-      negocio: neg
+      negocio: neg,
+      negocioId: String(adminPersonalizado?.authUid || adminPersonalizado?.id || 'adm_1')
     };
   }
 
@@ -136,7 +137,8 @@ function obtenerTenantActual() {
       adminId: String((adm && adm.id) || adminId),
       adminAuthUid: String((adm && adm.authUid) || usuarioActual.authUid || ''),
       adminEmail: String((adm && (adm.email || adm.usuario)) || adminEmail).toLowerCase(),
-      negocio: String(negocio || 'Mi Negocio')
+      negocio: String(negocio || 'Mi Negocio'),
+      negocioId: String((adm && adm.authUid) || usuarioActual.authUid || ((adm && adm.id) || adminId))
     };
   }
 
@@ -193,16 +195,10 @@ function obtenerTenantActual() {
       }
     }
 
-    // 4. Si aún no hay adminId, asociar al administrador personalizado más reciente
-    if (!adminId || adminId === 'adm_1') {
-      const ultimoAdmin = listaAdmins.find(a => a.id !== 'adm_1' && a.negocio && a.negocio !== 'GNET' && a.negocio !== 'GNET Operaciones') || listaAdmins.find(a => a.id !== 'adm_1');
-      if (ultimoAdmin) {
-        adminId = ultimoAdmin.id;
-        adminEmail = ultimoAdmin.email || ultimoAdmin.usuario || '';
-        if (ultimoAdmin.authUid) adminAuthUid = ultimoAdmin.authUid;
-        if (!negocio || negocio === 'GNET' || negocio === 'GNET Operaciones') negocio = ultimoAdmin.negocio || 'Mi Negocio';
-      }
-    }
+    // 4. [ELIMINADO] El antiguo fallback "asociar al administrador más reciente"
+    //    podía conectar un vendedor al negocio equivocado. Ahora, si un vendedor
+    //    no tiene administrador asignado, permanece sin negocio hasta que el
+    //    Root o su Administrador lo asocien correctamente.
 
     // Si aún el negocio es GNET o vacío, recuperar de localStorage
     if (!negocio || negocio === 'GNET' || negocio === 'GNET Operaciones') {
@@ -221,12 +217,13 @@ function obtenerTenantActual() {
       adminId: String(adminId || 'adm_1'),
       adminAuthUid: String(adminAuthUid || ''),
       adminEmail: String(adminEmail || '').toLowerCase(),
-      negocio: String(negocio || usuarioActual.negocio || 'Mi Negocio')
+      negocio: String(negocio || usuarioActual.negocio || 'Mi Negocio'),
+      negocioId: String(adminAuthUid || adminId || 'adm_1')
     };
   }
 
   // Root SuperAdmin
-  return { adminId: 'root', adminEmail: 'root@gnet.com', negocio: 'GNET Central' };
+  return { adminId: 'root', adminEmail: 'root@ventas.com', negocio: 'GNET Central', negocioId: 'root' };
 }
 
 let productosDB = (JSON.parse(localStorage.getItem('productos_db')) || [
@@ -366,23 +363,16 @@ window.cargarDatosDelNegocio = function(usuario) {
     }
   }
 
-  // Si aún no hay productos y estamos en línea, consultar Firestore inmediatamente para cargar el catálogo
-  if (productosDB.length === 0 && typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
-    firebase.firestore().collection('productos').get().then(snap => {
+  // Si aún no hay productos y estamos en línea, consultar Firestore inmediatamente para cargar el catálogo (SOLO de este negocio)
+  if (productosDB.length === 0 && typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine && negocioIdDe(tenant) && negocioIdDe(tenant) !== 'adm_1') {
+    colTenant(firebase.firestore(), tenant, 'productos').get().then(snap => {
       if (snap && !snap.empty) {
-        const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const delAdmin = remotos.filter(p => 
-          p.adminId === clave || 
-          (claveAuth && p.adminId === claveAuth) ||
-          (tenant.adminEmail && p.adminEmail && p.adminEmail.toLowerCase() === tenant.adminEmail.toLowerCase()) ||
-          (tenant.negocio && p.negocio && p.negocio.toLowerCase() === tenant.negocio.toLowerCase() && p.negocio.toLowerCase() !== 'gnet') ||
-          (!p.adminId && (clave === 'adm_1' || clave.includes('1')))
-        );
-        if (delAdmin.length > 0) {
-          productosDB = delAdmin.map(migrarProducto);
+        const delNegocio = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (delNegocio.length > 0) {
+          productosDB = delNegocio.map(migrarProducto);
           guardarProductosDB();
           renderizarInventario();
-          console.log(`✅ Catálogo de ${delAdmin.length} productos cargado desde Firestore para "${tenant.negocio}".`);
+          console.log(`✅ Catálogo de ${delNegocio.length} productos cargado desde Firestore para "${tenant.negocio}".`);
         }
       }
     }).catch(e => console.warn("Auto-carga productos Firestore:", e.message));
@@ -443,7 +433,7 @@ window.cargarDatosDelNegocio = function(usuario) {
         if (v.adminId && (String(v.adminId) === String(clave) || (claveAuth && String(v.adminId) === String(claveAuth)))) return true;
         if (v.adminEmail && tenant.adminEmail && String(v.adminEmail).toLowerCase() === tenant.adminEmail) return true;
         if (tenant.negocio && v.negocio && String(v.negocio).toLowerCase() === tenant.negocio.toLowerCase() && v.negocio !== 'GNET') return true;
-        if (!v.adminId && (clave === 'adm_1' || String(clave).includes('1'))) return true;
+        if (!v.adminId && clave === 'adm_1') return true;
         return false;
       });
       localStorage.setItem('negocio_vendedores_' + clave, JSON.stringify(vendedoresDB));
@@ -485,38 +475,23 @@ window.cargarDatosDelNegocio = function(usuario) {
     localStorage.setItem('negocio_nominas_' + clave, JSON.stringify(nominasDB));
   }
 
-  // Auto-sincronizar nóminas desde Firestore en segundo plano si estamos en línea
-  if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
-    firebase.firestore().collection('nominas').get().then(snap => {
+  // Auto-sincronizar nóminas desde Firestore en segundo plano si estamos en línea (SOLO de este negocio)
+  if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine && negocioIdDe(tenant) && negocioIdDe(tenant) !== 'adm_1') {
+    const dbNominas = firebase.firestore();
+    let consultaNominas;
+    if (usuario.rol === 'admin') {
+      consultaNominas = colTenant(dbNominas, tenant, 'nominas');
+    } else {
+      // Vendedor: solo SUS recibos de nómina (filtrado en el servidor)
+      const miUid = String(usuario.authUid || usuario.id || '');
+      consultaNominas = colTenant(dbNominas, tenant, 'nominas').where('vendedorId', '==', miUid);
+    }
+    consultaNominas.get().then(snap => {
       if (snap && !snap.empty) {
         const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        let filtradas = [];
-        if (usuario.rol === 'admin') {
-          filtradas = remotos.filter(n => 
-            n.adminId === clave || 
-            (claveAuth && n.adminId === claveAuth) ||
-            (tenant.adminEmail && n.adminEmail && n.adminEmail.toLowerCase() === tenant.adminEmail.toLowerCase()) ||
-            (tenant.negocio && n.negocio && n.negocio.toLowerCase() === tenant.negocio.toLowerCase() && n.negocio.toLowerCase() !== 'gnet')
-          );
-        } else {
-          const miVendId = String(usuario.id || '');
-          const miVendAuth = String(usuario.authUid || '');
-          const miVendUser = String(usuario.usuario || '').toLowerCase();
-          const miVendEmail = String(usuario.email || '').toLowerCase();
-          const miVendNom = String(usuario.nombre || usuario.displayName || '').toLowerCase();
-
-          filtradas = remotos.filter(n => 
-            String(n.vendedorId) === miVendId ||
-            (miVendAuth && (String(n.vendedorId) === miVendAuth || String(n.vendedorAuthUid) === miVendAuth)) ||
-            (n.vendedorUsuario && miVendUser && String(n.vendedorUsuario).toLowerCase() === miVendUser) ||
-            (n.vendedorEmail && miVendEmail && String(n.vendedorEmail).toLowerCase() === miVendEmail) ||
-            (n.nombreVendedor && miVendNom && String(n.nombreVendedor).toLowerCase() === miVendNom) ||
-            (n.adminId === clave && miVendNom && n.nombreVendedor && String(n.nombreVendedor).toLowerCase() === miVendNom)
-          );
-        }
-        if (filtradas.length > 0) {
+        if (remotos.length > 0) {
           const mapNom = new Map(nominasDB.map(n => [String(n.id), n]));
-          filtradas.forEach(r => mapNom.set(String(r.id), r));
+          remotos.forEach(r => mapNom.set(String(r.id), r));
           nominasDB = Array.from(mapNom.values());
           guardarNominasDB();
           if (usuario.rol === 'vendedor') renderizarNominasVendedor();
@@ -697,6 +672,7 @@ window.guardarVendedor = async function(e) {
     adminAuthUid: adminAuthUidActual,
     adminEmail: adminEmailActual,
     negocio: negocioActual,
+    negocioId: tenant.negocioId || adminAuthUidActual || adminIdActual,
     rol: 'vendedor',
     accesoActivo: true,
     fechaCreacion: new Date().toISOString()
@@ -704,21 +680,29 @@ window.guardarVendedor = async function(e) {
 
   try {
     // 1. Crear en Firebase Auth con app secundaria para NO desloguear al Administrador activo
-    const authUid = await crearCuentaFirebaseAuth(formatearEmail(usuario), password, nuevo.nombre);
-    if (authUid) {
-      nuevo.authUid = authUid;
+    const resAuth = await crearCuentaFirebaseAuth(formatearEmail(usuario), password, nuevo.nombre);
+    if (resAuth.ok) {
+      nuevo.authUid = resAuth.uid;
+      // El UID de Auth es la identidad estable del vendedor: como doc ID permite
+      // que las reglas de Firestore verifiquen su membresía en el negocio.
+      nuevo.id = resAuth.uid;
+    } else {
+      // La cuenta ya existía en Auth: la contraseña REAL sigue siendo la de
+      // creación. Se avisa para que el administrador no crea haberla cambiado.
+      nuevo.credencialPendiente = true;
     }
 
-    // 2. Guardar en Firestore tanto en 'vendedores' como en 'usuarios'
+    // 2. Guardar dentro del espacio aislado de ESTE negocio + espejo de perfil
     if (typeof firebase !== 'undefined' && firebase.firestore) {
       const db = firebase.firestore();
       const docSanitizado = sanitizarParaFirestore(nuevo);
-      await db.collection('vendedores').doc(nuevo.id).set(docSanitizado, { merge: true });
-      await db.collection('usuarios').doc(nuevo.id).set(docSanitizado, { merge: true });
-      if (authUid) {
-        await db.collection('vendedores').doc(authUid).set(docSanitizado, { merge: true });
-        await db.collection('usuarios').doc(authUid).set(docSanitizado, { merge: true });
+      const nid = negocioIdDe(obtenerTenantActual()) || nuevo.negocioId;
+      if (nid && nid !== 'adm_1') {
+        // Datos del equipo dentro del negocio
+        await db.collection('negocios').doc(nid).collection('vendedores').doc(nuevo.id).set(docSanitizado, { merge: true });
       }
+      // Espejo de perfil (login directo por UID y directorio de Root)
+      await db.collection('vendedores').doc(nuevo.id).set(docSanitizado, { merge: true });
     }
   } catch (err) {
     console.warn("Error guardando vendedor en Firestore:", err);
@@ -732,7 +716,13 @@ window.guardarVendedor = async function(e) {
   document.getElementById('form-vendedor').reset();
   poblarSelectsVendedores();
   renderizarVendedores();
-  toast(`✅ Vendedor ${nuevo.nombre} registrado para "${negocioActual}" exitosamente.`);
+  if (nuevo.credencialPendiente) {
+    toast(`⚠️ Vendedor ${nuevo.nombre} agregado al equipo, pero su cuenta ya existía en Firebase.`);
+    alert('⚠️ ' + mensajeErrorAuth('auth/email-already-in-use')
+      + '\n\nUsuario: ' + nuevo.email);
+  } else {
+    toast(`✅ Vendedor ${nuevo.nombre} registrado para "${negocioActual}" exitosamente.`);
+  }
 };
 
 window.renderizarVendedores = function() {
@@ -748,9 +738,10 @@ window.renderizarVendedores = function() {
 
     lista = vendedoresDB.filter(v => {
       if (v.adminId && String(v.adminId) === miAdminId) return true;
+      if (v.adminAuthUid && miAdminId && String(v.adminAuthUid) === miAdminId) return true;
       if (v.adminEmail && String(v.adminEmail).toLowerCase() === miEmail) return true;
-      if (miNegocio && v.negocio && String(v.negocio).toLowerCase() === miNegocio) return true;
-      if (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1'))) return true;
+      if (miNegocio && v.negocio && String(v.negocio).toLowerCase() === miNegocio && v.negocio !== 'GNET') return true;
+      if (!v.adminId && miAdminId === 'adm_1') return true;
       return false;
     });
   }
@@ -798,9 +789,10 @@ window.poblarSelectsVendedores = function() {
 
     lista = vendedoresDB.filter(v => {
       if (v.adminId && String(v.adminId) === miAdminId) return true;
+      if (v.adminAuthUid && miAdminId && String(v.adminAuthUid) === miAdminId) return true;
       if (v.adminEmail && String(v.adminEmail).toLowerCase() === miEmail) return true;
-      if (miNegocio && v.negocio && String(v.negocio).toLowerCase() === miNegocio) return true;
-      if (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1'))) return true;
+      if (miNegocio && v.negocio && String(v.negocio).toLowerCase() === miNegocio && v.negocio !== 'GNET') return true;
+      if (!v.adminId && miAdminId === 'adm_1') return true;
       return false;
     });
   }
@@ -980,7 +972,12 @@ window.guardarRestablecerPassword = async function() {
 
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
-      await firebase.firestore().collection('vendedores').doc(String(v.id)).set({ password: nueva }, { merge: true });
+      const db = firebase.firestore();
+      const nid = negocioIdDe(obtenerTenantActual());
+      if (nid && nid !== 'adm_1') {
+        await db.collection('negocios').doc(nid).collection('vendedores').doc(String(v.id)).set({ password: nueva }, { merge: true });
+      }
+      await db.collection('vendedores').doc(String(v.id)).set({ password: nueva }, { merge: true });
     } catch (e) {
       console.warn("Error actualizando clave en Firestore:", e);
     }
@@ -989,6 +986,15 @@ window.guardarRestablecerPassword = async function() {
   cerrarModalRestablecerPassword();
   renderizarVendedores();
   toast(`✅ Contraseña de ${v.nombre} restablecida en Firebase`);
+  // AVISO IMPORTANTE: desde el navegador no se puede cambiar la contraseña
+  // REAL de otro usuario de Firebase Auth. Lo que se guardó arriba es la
+  // copia de referencia (modo sin conexión). Para que el vendedor entre
+  // con esa clave hay que restablecerla en Authentication.
+  alert('📌 La clave de referencia quedó guardada para "' + v.nombre + '".\n\n'
+    + 'Por seguridad, Firebase NO permite cambiar desde el navegador la contraseña de otro usuario.\n\n'
+    + 'Para que el vendedor entre con esta clave, el Root debe restablecerla en Firebase Authentication '
+    + '(node scripts/establecer-clave.mjs ' + (v.email || v.usuario) + ' "' + nueva + '"), '
+    + 'o bien el vendedor debe usar "🔑 Cambiar mi contraseña" dentro de la app.');
 };
 
 let clienteEditandoId = null;
@@ -1198,7 +1204,7 @@ window.enviarNominaAVendedor = async function() {
 
   const nuevaNomina = {
     id: "nom_" + Date.now(),
-    vendedorId: String(vend.id || vId),
+    vendedorId: String(vend.authUid || vend.id || vId),
     vendedorAuthUid: String(vend.authUid || ''),
     vendedorUsuario: vend.usuario || '',
     vendedorEmail: vend.email || '',
@@ -1212,16 +1218,20 @@ window.enviarNominaAVendedor = async function() {
     estado: 'enviado',
     adminId: miAdminId,
     adminEmail: miEmail,
-    negocio: miNegocio
+    negocio: miNegocio,
+    negocioId: tenant.negocioId || miAdminId
   };
 
   nominasDB = [nuevaNomina, ...nominasDB.filter(n => String(n.id) !== String(nuevaNomina.id))];
   guardarNominasDB();
 
-  // Guardar en Firestore inmediatamente si está disponible y en línea
+  // Guardar en Firestore inmediatamente si está disponible y en línea (dentro del negocio)
   if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
     try {
-      await firebase.firestore().collection('nominas').doc(nuevaNomina.id).set(sanitizarParaFirestore(nuevaNomina), { merge: true });
+      const nid = negocioIdDe(tenant);
+      if (nid && nid !== 'adm_1') {
+        await colTenant(firebase.firestore(), tenant, 'nominas').doc(nuevaNomina.id).set(sanitizarParaFirestore(nuevaNomina), { merge: true });
+      }
     } catch (e) {
       console.warn("Guardar nómina Firestore directo:", e.message);
     }
@@ -1242,10 +1252,9 @@ window.renderizarHistorialNominasAdmin = function() {
   const miNegocio = String(tenant.negocio || '').toLowerCase();
 
   const misNominas = nominasDB.filter(n => 
-    !n.adminId || 
-    String(n.adminId) === miAdminId || 
-    (miNegocio && n.negocio && String(n.negocio).toLowerCase() === miNegocio) ||
-    (miAdminId === 'adm_1' || miAdminId.includes('1'))
+    (String(n.adminId) === miAdminId) || 
+    (tenant.adminAuthUid && String(n.adminId) === String(tenant.adminAuthUid)) ||
+    (miNegocio && n.negocio && String(n.negocio).toLowerCase() === miNegocio && n.negocio !== 'GNET')
   );
 
   if (misNominas.length === 0) {
@@ -1288,27 +1297,25 @@ window.renderizarNominasVendedor = function() {
     (miNombre && n.nombreVendedor && String(n.nombreVendedor).toLowerCase() === miNombre)
   );
 
-  // Si no hay locales y hay conexión, consultar Firestore en tiempo real
+  // Si no hay locales y hay conexión, consultar SOLO las nóminas de este venedor en su negocio
   if (misNominas.length === 0 && typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
-    firebase.firestore().collection('nominas').get().then(snap => {
-      if (snap && !snap.empty) {
-        const remotas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const encontradas = remotas.filter(n => 
-          (n.vendedorId && String(n.vendedorId) === miVendId) || 
-          (miVendAuth && (String(n.vendedorId) === miVendAuth || String(n.vendedorAuthUid) === miVendAuth)) ||
-          (n.vendedorUsuario && String(n.vendedorUsuario).toLowerCase() === miUser) ||
-          (n.vendedorEmail && String(n.vendedorEmail).toLowerCase() === miEmail) ||
-          (miNombre && n.nombreVendedor && String(n.nombreVendedor).toLowerCase() === miNombre)
-        );
-        if (encontradas.length > 0) {
-          const mapNom = new Map(nominasDB.map(n => [String(n.id), n]));
-          encontradas.forEach(r => mapNom.set(String(r.id), r));
-          nominasDB = Array.from(mapNom.values());
-          guardarNominasDB();
-          renderizarNominasVendedor();
+    const tenantNom = obtenerTenantActual();
+    const nidNom = negocioIdDe(tenantNom);
+    if (nidNom && nidNom !== 'adm_1') {
+      const miUidNom = String(usuarioActual.authUid || usuarioActual.id || '');
+      colTenant(firebase.firestore(), tenantNom, 'nominas').where('vendedorId', '==', miUidNom).get().then(snap => {
+        if (snap && !snap.empty) {
+          const remotas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (remotas.length > 0) {
+            const mapNom = new Map(nominasDB.map(n => [String(n.id), n]));
+            remotas.forEach(r => mapNom.set(String(r.id), r));
+            nominasDB = Array.from(mapNom.values());
+            guardarNominasDB();
+            renderizarNominasVendedor();
+          }
         }
-      }
-    }).catch(console.warn);
+      }).catch(console.warn);
+    }
   }
 
   if (misNominas.length === 0) {
@@ -1644,11 +1651,14 @@ window.guardarProductoNuevo = async function(e) {
   ajustarPasosProducto('pn');
   renderizarInventario();
 
-  // Guardar en Firestore inmediatamente si está disponible y en línea
+  // Guardar en Firestore inmediatamente si está disponible y en línea (dentro de este negocio)
   if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
     try {
-      const prodDoc = sanitizarParaFirestore(nuevo);
-      await firebase.firestore().collection('productos').doc(String(nuevo.id)).set(prodDoc, { merge: true });
+      const nidProd = negocioIdDe(tenant);
+      if (nidProd && nidProd !== 'adm_1') {
+        const prodDoc = sanitizarParaFirestore({ ...nuevo, negocioId: nidProd });
+        await colTenant(firebase.firestore(), tenant, 'productos').doc(String(nuevo.id)).set(prodDoc, { merge: true });
+      }
     } catch (e) {
       console.warn("Guardar producto Firestore directo:", e.message);
     }
@@ -1729,7 +1739,12 @@ window.guardarProductoModificado = async function(e) {
 
   if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
     try {
-      await firebase.firestore().collection('productos').doc(String(productoEnEdicionId)).set(sanitizarParaFirestore(prodActualizado), { merge: true });
+      const nidProdMod = negocioIdDe(tenant);
+      if (nidProdMod && nidProdMod !== 'adm_1') {
+        // Nota: se usa prodActualizado.id porque cancelarEdicionProducto()
+        // limpia productoEnEdicionId antes de este punto.
+        await colTenant(firebase.firestore(), tenant, 'productos').doc(String(prodActualizado.id)).set(sanitizarParaFirestore({ ...prodActualizado, negocioId: nidProdMod }), { merge: true });
+      }
     } catch (e) {
       console.warn("Actualizar producto Firestore:", e);
     }
@@ -1751,7 +1766,10 @@ window.eliminarProducto = async function() {
 
   if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
     try {
-      await firebase.firestore().collection('productos').doc(String(idAEliminar)).delete();
+      const tenantDel = obtenerTenantActual();
+      if (negocioIdDe(tenantDel) && negocioIdDe(tenantDel) !== 'adm_1') {
+        await colTenant(firebase.firestore(), tenantDel, 'productos').doc(String(idAEliminar)).delete();
+      }
     } catch (e) {
       console.warn("Eliminar producto Firestore:", e);
     }
@@ -2779,8 +2797,10 @@ window.verificarConexionFirebase = async function() {
   }
 
   try {
-    // Probar conexión en vivo con Firebase Firestore
-    await firebase.firestore().collection('admins').limit(1).get({ source: 'server' });
+    // Probar conexión en vivo: leer un documento inexistente. Cualquier
+    // respuesta del servidor (aunque sea "permission-denied") confirma
+    // que hay red; solo errores de red indican falta de conexión.
+    await firebase.firestore().collection('admins').doc('verificacion-conexion').get();
     if (elLogin) {
       elLogin.className = 'font-semibold text-emerald-600';
       elLogin.innerText = 'Conectado a Firestore';
@@ -2792,6 +2812,19 @@ window.verificarConexionFirebase = async function() {
     console.log('✅ Conexión activa y confirmada con Firebase Firestore (ventas-campo-92a4c)');
     return true;
   } catch (err) {
+    const erroresDeRed = ['unavailable', 'deadline-exceeded', 'cancelled', 'internal', 'resource-exhausted'];
+    if (!erroresDeRed.includes(err.code)) {
+      // El servidor respondió (p. ej. permission-denied): hay conexión
+      if (elLogin) {
+        elLogin.className = 'font-semibold text-emerald-600';
+        elLogin.innerText = 'Conectado a Firestore';
+      }
+      if (elSync) {
+        elSync.className = 'font-semibold text-emerald-600';
+        elSync.innerText = '✅ Conectado a Firestore (ventas-campo-92a4c)';
+      }
+      return true;
+    }
     console.warn('Verificación Firestore:', err.code, err.message);
     if (elLogin) {
       elLogin.className = 'font-semibold text-emerald-600';
@@ -2831,6 +2864,38 @@ function conTimeout(promise, ms = 5000) {
   ]);
 }
 
+// ============================================================
+// HELPERS DE AISLAMIENTO MULTI-NEGOCIO
+// El identificador estable de cada negocio (tenant) es el UID
+// de Firebase Auth del administrador que lo creó.
+// Los datos de cada negocio viven en: negocios/{negocioId}/{col}
+// ============================================================
+function negocioIdDe(tenant) {
+  return String((tenant && (tenant.adminAuthUid || tenant.adminId)) || '');
+}
+
+// Referencia a una colección DENTRO del espacio aislado del negocio
+function colTenant(db, tenant, col) {
+  return db.collection('negocios').doc(negocioIdDe(tenant)).collection(col);
+}
+
+// Identificadores propios del vendedor que usa este dispositivo
+function idsVendedorActual() {
+  const ids = new Set();
+  if (usuarioActual) {
+    if (usuarioActual.id) ids.add(String(usuarioActual.id));
+    if (usuarioActual.uid) ids.add(String(usuarioActual.uid));
+    if (usuarioActual.authUid) ids.add(String(usuarioActual.authUid));
+  }
+  return ids;
+}
+
+// ¿Este documento pertenece al vendedor que usa este dispositivo?
+function esMioDeVendedor(doc) {
+  const ids = idsVendedorActual();
+  return !!(doc && doc.vendedorId != null && ids.has(String(doc.vendedorId)));
+}
+
 window.sincronizarAhora = async function() {
   const btn = document.getElementById('btn-sync-ahora');
   const logDiv = document.getElementById('sync-log');
@@ -2852,6 +2917,7 @@ window.sincronizarAhora = async function() {
     const miAdminId = String(tenant.adminId || 'adm_1');
     const miEmail = String(tenant.adminEmail || '').toLowerCase();
     const miNegocio = tenant.negocio || (usuarioActual && usuarioActual.negocio) || 'Mi Negocio';
+    const miNegocioId = negocioIdDe(tenant);
 
     log(`🏢 Negocio: <strong>${miNegocio}</strong> (${rolActual.toUpperCase()})`);
     log("Iniciando sincronización con almacenamiento local y nube...");
@@ -2890,282 +2956,86 @@ window.sincronizarAhora = async function() {
       // ADMINISTRADOR: SINCRONIZACIÓN Y AISLAMIENTO DE NEGOCIO
       // =======================================================
 
-      // 1. Subir productos locales de este administrador a Firestore
-      let prodsSubidos = 0;
-      if (db && navigator.onLine) {
-        try {
-          for (const p of productosDB) {
-            if (!p.id) continue;
-            const prodDoc = sanitizarParaFirestore({
-              ...p,
-              adminId: miAdminId,
-              adminEmail: miEmail,
-              negocio: miNegocio
-            });
-            await conTimeout(db.collection('productos').doc(String(p.id)).set(prodDoc, { merge: true }), 3500);
-            prodsSubidos++;
-          }
-          if (prodsSubidos > 0) {
-            log(`☁️ ${prodsSubidos} productos de "${miNegocio}" sincronizados a Firestore`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eProd) {
-          console.warn("Subida productos Firestore:", eProd.message);
-          log(`💾 ${productosDB.length} productos guardados en Local Storage (${eProd.message.includes('permission') ? 'Modo Local Seguro' : 'Almacenamiento Local'})`, 'info');
-        }
+      if (!db || !navigator.onLine) {
+        log(`💾 Modo local activo: ${productosDB.length} productos, ${clientesDB.length} clientes y ${ventasDB.length} ventas resguardados en este dispositivo`, 'info');
+      } else if (!miNegocioId || miNegocioId === 'adm_1') {
+        log('⚠️ Tu usuario no tiene un negocio configurado en la nube. Pide al Root que registre tu negocio para sincronizar.', 'warn');
       } else {
-        log(`💾 ${productosDB.length} productos resguardados en Local Storage`, 'info');
-      }
-
-      // 2. Subir clientes locales de este administrador a Firestore
-      let cliSubidos = 0;
-      if (db && navigator.onLine) {
-        try {
-          for (const c of clientesDB) {
-            if (!c.id) continue;
-            const cliDoc = sanitizarParaFirestore({
-              ...c,
-              adminId: miAdminId,
-              adminEmail: miEmail,
-              negocio: miNegocio
-            });
-            await conTimeout(db.collection('clientes').doc(String(c.id)).set(cliDoc, { merge: true }), 3500);
-            cliSubidos++;
-          }
-          if (cliSubidos > 0) {
-            log(`☁️ ${cliSubidos} clientes de tu negocio sincronizados a Firestore`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eCli) {
-          console.warn("Subida clientes Firestore:", eCli.message);
-          log(`💾 ${clientesDB.length} clientes resguardados en Local Storage`, 'info');
-        }
-      } else {
-        log(`💾 ${clientesDB.length} clientes resguardados en Local Storage`, 'info');
-      }
-
-      // 3. Subir ventas locales de este negocio
-      let ventasSubidas = 0;
-      if (db && navigator.onLine) {
-        try {
-          for (const v of ventasDB) {
-            if (!v.id) continue;
-            const ventaDoc = sanitizarParaFirestore({
-              ...v,
-              adminId: miAdminId,
-              adminEmail: miEmail,
-              negocio: miNegocio
-            });
-            await conTimeout(db.collection('ventas').doc(String(v.id)).set(ventaDoc, { merge: true }), 3500);
-            ventasSubidas++;
-          }
-          if (ventasSubidas > 0) {
-            log(`☁️ ${ventasSubidas} notas de venta sincronizadas a Firestore`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eVenta) {
-          console.warn("Subida ventas Firestore:", eVenta.message);
-          log(`💾 ${ventasDB.length} ventas aseguradas en Local Storage`, 'info');
-        }
-      } else {
-        log(`💾 ${ventasDB.length} ventas aseguradas en Local Storage`, 'info');
-      }
-
-      // 4. Subir vendedores de este administrador
-      let vendsSubidos = 0;
-      if (db && navigator.onLine) {
-        try {
-          const misVends = vendedoresDB.filter(v => 
-            v.adminId === miAdminId || 
-            (v.adminEmail && v.adminEmail === miEmail) || 
-            (miNegocio && v.negocio && v.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-            (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-          );
-          for (const vend of misVends) {
-            if (!vend.id) continue;
-            const vendDoc = sanitizarParaFirestore({
-              ...vend,
-              adminId: miAdminId,
-              adminEmail: miEmail,
-              negocio: miNegocio
-            });
-            await conTimeout(db.collection('vendedores').doc(String(vend.id)).set(vendDoc, { merge: true }), 3500);
-            vendsSubidos++;
-          }
-          if (vendsSubidos > 0) {
-            log(`☁️ ${vendsSubidos} vendedores de tu negocio sincronizados a Firestore`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eVend) {
-          console.warn("Subida vendedores Firestore:", eVend.message);
-        }
-      }
-
-      // 5. Subir nóminas emitidas por este administrador
-      let nominasSubidas = 0;
-      if (db && navigator.onLine) {
-        try {
-          const misNominas = nominasDB.filter(n => 
-            n.adminId === miAdminId || 
-            (n.adminEmail && n.adminEmail === miEmail) || 
-            (miNegocio && n.negocio && n.negocio.toLowerCase() === miNegocio.toLowerCase()) || 
-            (!n.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-          );
-          for (const nom of misNominas) {
-            if (!nom.id) continue;
-            const nomDoc = sanitizarParaFirestore({
-              ...nom,
-              adminId: miAdminId,
-              adminEmail: miEmail,
-              negocio: miNegocio
-            });
-            await conTimeout(db.collection('nominas').doc(String(nom.id)).set(nomDoc, { merge: true }), 3500);
-            nominasSubidas++;
-          }
-          if (nominasSubidas > 0) {
-            log(`☁️ ${nominasSubidas} recibos de nómina sincronizados a Firestore`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eNom) {
-          console.warn("Subida nóminas Firestore:", eNom.message);
-        }
-      }
-
-      // 6. Descargar datos de Firestore hacia Local Storage (SOLO de este administrador)
-      if (db && navigator.onLine) {
-        try {
-          // Descargar productos
-          const snapProds = await conTimeout(db.collection('productos').get(), 5000);
-          if (snapProds && !snapProds.empty) {
-            const prodsRemotos = snapProds.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(p => 
-                p.adminId === miAdminId || 
-                (miEmail && p.adminEmail === miEmail) || 
-                (miNegocio && p.negocio && p.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-                (!p.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-              );
-            
-            if (prodsRemotos.length > 0) {
-              const mapLocal = new Map(productosDB.map(p => [String(p.id), p]));
-              prodsRemotos.forEach(r => mapLocal.set(String(r.id), migrarProducto(r)));
-              productosDB = Array.from(mapLocal.values());
-              guardarProductosDB();
-              renderizarInventario();
-              descargaCloudOk = true;
-              log(`📥 ${prodsRemotos.length} productos actualizados en Local Storage`, 'success');
+        // -------------------------------------------------------
+        // SUBIR datos locales de ESTE negocio a negocios/{negocioId}
+        // -------------------------------------------------------
+        const subirColeccion = async (coleccion, lista, etiqueta) => {
+          let subidos = 0;
+          try {
+            for (const item of lista) {
+              if (!item || !item.id) continue;
+              const docSubir = sanitizarParaFirestore({
+                ...item,
+                adminId: miAdminId,
+                adminEmail: miEmail,
+                negocio: miNegocio,
+                negocioId: miNegocioId
+              });
+              await conTimeout(colTenant(db, tenant, coleccion).doc(String(item.id)).set(docSubir, { merge: true }), 3500);
+              subidos++;
             }
-          }
-        } catch (errProdsDesc) {
-          console.warn("Descarga productos Firestore:", errProdsDesc.message);
-        }
-
-        try {
-          // Descargar clientes
-          const snapCli = await conTimeout(db.collection('clientes').get(), 5000);
-          if (snapCli && !snapCli.empty) {
-            const cliRemotos = snapCli.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(c => 
-                c.adminId === miAdminId || 
-                (miEmail && c.adminEmail === miEmail) || 
-                (miNegocio && c.negocio && c.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-                (!c.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-              );
-            
-            if (cliRemotos.length > 0) {
-              const mapCli = new Map(clientesDB.map(c => [String(c.id), c]));
-              cliRemotos.forEach(r => mapCli.set(String(r.id), r));
-              clientesDB = Array.from(mapCli.values());
-              guardarClientesDB();
-              renderizarAgenda();
-              renderizarMisClientes();
-              descargaCloudOk = true;
-              log(`📥 ${cliRemotos.length} clientes consolidados en Local Storage`, 'success');
+            if (subidos > 0) {
+              log(`☁️ ${subidos} ${etiqueta} de "${miNegocio}" sincronizados a Firestore`, 'success');
+              subidaCloudOk = true;
             }
+          } catch (eSub) {
+            console.warn(`Subida ${coleccion} Firestore:`, eSub.message);
+            log(`💾 ${lista.length} ${etiqueta} resguardados en Local Storage (${eSub.message.includes('permission') ? 'permiso denegado por reglas' : 'sin conexión'})`, 'info');
           }
-        } catch (errCliDesc) {
-          console.warn("Descarga clientes Firestore:", errCliDesc.message);
-        }
+        };
 
+        await subirColeccion('productos', productosDB, 'productos');
+        await subirColeccion('clientes', clientesDB, 'clientes y visitas');
+        await subirColeccion('ventas', ventasDB, 'notas de venta');
+        await subirColeccion('nominas', nominasDB, 'recibos de nómina');
+        await subirColeccion('vendedores', vendedoresDB, 'vendedores');
+
+        // Los vendedores también llevan espejo de perfil en la raíz
+        // (para login directo por UID y directorio de Root)
         try {
-          // Descargar ventas
-          const snapVentas = await conTimeout(db.collection('ventas').get(), 5000);
-          if (snapVentas && !snapVentas.empty) {
-            const ventasRemotas = snapVentas.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(v => 
-                v.adminId === miAdminId || 
-                (miEmail && v.adminEmail === miEmail) || 
-                (miNegocio && v.negocio && v.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-                (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-              );
-            
-            if (ventasRemotas.length > 0) {
-              const mapVentas = new Map(ventasDB.map(v => [String(v.id), v]));
-              ventasRemotas.forEach(r => mapVentas.set(String(r.id), r));
-              ventasDB = Array.from(mapVentas.values());
-              guardarVentasDB();
-              renderizarVentasSemana();
-              renderizarReporteVentas();
-              descargaCloudOk = true;
-              log(`📥 ${ventasRemotas.length} ventas del equipo consolidadas en Local Storage`, 'success');
+          for (const vend of vendedoresDB) {
+            if (!vend || !vend.id) continue;
+            await conTimeout(db.collection('vendedores').doc(String(vend.id)).set(sanitizarParaFirestore({ ...vend, negocioId: miNegocioId, adminId: miAdminId, negocio: miNegocio }), { merge: true }), 3500);
+          }
+        } catch (eEspejo) {
+          console.warn('Espejo vendedores Firestore:', eEspejo.message);
+        }
+      }
+
+      // -------------------------------------------------------
+      // DESCARGAR datos SOLO de este negocio (la ruta de Firestore
+      // ya garantiza el aislamiento: otros negocios nunca se leen)
+      // -------------------------------------------------------
+      if (db && navigator.onLine && miNegocioId && miNegocioId !== 'adm_1') {
+        const descargarColeccion = async (coleccion, obtener, fijar, etiqueta, render) => {
+          try {
+            const snap = await conTimeout(colTenant(db, tenant, coleccion).get(), 5000);
+            if (snap && !snap.empty) {
+              const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+              if (remotos.length > 0) {
+                const mapa = new Map(obtener().map(x => [String(x.id), x]));
+                remotos.forEach(r => mapa.set(String(r.id), r));
+                fijar(Array.from(mapa.values()));
+                if (render) render();
+                descargaCloudOk = true;
+                log(`📥 ${remotos.length} ${etiqueta} consolidados desde tu negocio`, 'success');
+              }
             }
+          } catch (eDesc) {
+            console.warn(`Descarga ${coleccion} Firestore:`, eDesc.message);
           }
-        } catch (errVentasDesc) {
-          console.warn("Descarga ventas Firestore:", errVentasDesc.message);
-        }
+        };
 
-        try {
-          // Descargar vendedores pertenecientes a este admin
-          const snapVend = await conTimeout(db.collection('vendedores').get(), 5000);
-          if (snapVend && !snapVend.empty) {
-            const vendsRemotos = snapVend.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(v => 
-                v.adminId === miAdminId || 
-                (miEmail && v.adminEmail === miEmail) || 
-                (miNegocio && v.negocio && v.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-                (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-              );
-            
-            const mapVend = new Map(vendedoresDB.map(v => [String(v.id), v]));
-            vendsRemotos.forEach(r => mapVend.set(String(r.id), r));
-            vendedoresDB = Array.from(mapVend.values());
-            guardarVendedoresDB();
-            poblarSelectsVendedores();
-            renderizarVendedores();
-            log(`📥 ${vendedoresDB.length} vendedores de tu negocio listos en Local Storage`, 'success');
-          }
-        } catch (errVendDesc) {
-          console.warn("Descarga vendedores Firestore:", errVendDesc.message);
-        }
-
-        try {
-          // Descargar nóminas pertenecientes a este negocio
-          const snapNom = await conTimeout(db.collection('nominas').get(), 5000);
-          if (snapNom && !snapNom.empty) {
-            const nomRemotas = snapNom.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(n => 
-                n.adminId === miAdminId || 
-                (miEmail && n.adminEmail === miEmail) || 
-                (miNegocio && n.negocio && n.negocio.toLowerCase() === miNegocio.toLowerCase()) ||
-                (!n.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))
-              );
-            
-            if (nomRemotas.length > 0) {
-              const mapNom = new Map(nominasDB.map(n => [String(n.id), n]));
-              nomRemotas.forEach(r => mapNom.set(String(r.id), r));
-              nominasDB = Array.from(mapNom.values());
-              guardarNominasDB();
-              renderizarHistorialNominasAdmin();
-              log(`📥 ${nomRemotas.length} recibos de nómina sincronizados en Local Storage`, 'success');
-            }
-          }
-        } catch (errNomDesc) {
-          console.warn("Descarga nóminas Firestore:", errNomDesc.message);
-        }
+        await descargarColeccion('productos', () => productosDB, v => { productosDB = v; guardarProductosDB(); }, 'productos', renderizarInventario);
+        await descargarColeccion('clientes', () => clientesDB, v => { clientesDB = v; guardarClientesDB(); }, 'clientes y visitas', () => { renderizarAgenda(); renderizarMisClientes(); });
+        await descargarColeccion('ventas', () => ventasDB, v => { ventasDB = v; guardarVentasDB(); }, 'ventas del equipo', () => { renderizarVentasSemana(); renderizarReporteVentas(); });
+        await descargarColeccion('vendedores', () => vendedoresDB, v => { vendedoresDB = v; guardarVendedoresDB(); }, 'vendedores', () => { poblarSelectsVendedores(); renderizarVendedores(); });
+        await descargarColeccion('nominas', () => nominasDB, v => { nominasDB = v; guardarNominasDB(); }, 'recibos de nómina', renderizarHistorialNominasAdmin);
       }
 
       // Consolidación final y persistencia en Local Storage
@@ -3187,16 +3057,21 @@ window.sincronizarAhora = async function() {
 
     } else if (rolActual === 'vendedor') {
       // =======================================================
-      // VENDEDOR: SINCRONIZA HACIA SU ADMINISTRADOR
+      // VENDEDOR: COMUNICA CON SU ADMINISTRADOR
+      // Sube SUS ventas y SUS clientes; descarga el catálogo del
+      // negocio, SUS clientes asignados y SUS nóminas. Todo ocurre
+      // dentro de negocios/{negocioId} — jamás toca otros negocios.
       // =======================================================
-      const miVendedorId = String(usuarioActual.id || usuarioActual.uid || 'vend_1');
-      const miVendedorNombre = String(usuarioActual.nombre || usuarioActual.displayName || '').toLowerCase();
-      const miVendedorUser = String(usuarioActual.usuario || '').toLowerCase();
+      const miVendedorId = String(usuarioActual.authUid || usuarioActual.id || usuarioActual.uid || '');
 
-      // 1. Subir ventas realizadas por este vendedor
-      const misVentasLocales = ventasDB.filter(v => String(v.vendedorId) === miVendedorId);
-      let vSubidas = 0;
-      if (db && navigator.onLine) {
+      if (!db || !navigator.onLine) {
+        log(`💾 Modo local: tus ventas y clientes están resguardados en este dispositivo`, 'info');
+      } else if (!miNegocioId || miNegocioId === 'adm_1') {
+        log('⚠️ Tu usuario no tiene un negocio asignado. Pide a tu Administrador o al Root que te asocien a un negocio para poder sincronizar.', 'warn');
+      } else {
+        // 1. Subir SUS ventas realizadas hacia la cuenta de su Administrador
+        const misVentasLocales = ventasDB.filter(v => esMioDeVendedor(v));
+        let vSubidas = 0;
         try {
           for (const v of misVentasLocales) {
             if (!v.id) continue;
@@ -3204,9 +3079,10 @@ window.sincronizarAhora = async function() {
               ...v,
               adminId: miAdminId,
               vendedorId: miVendedorId,
-              negocio: miNegocio
+              negocio: miNegocio,
+              negocioId: miNegocioId
             });
-            await conTimeout(db.collection('ventas').doc(String(v.id)).set(ventaDoc, { merge: true }), 3500);
+            await conTimeout(colTenant(db, tenant, 'ventas').doc(String(v.id)).set(ventaDoc, { merge: true }), 3500);
             vSubidas++;
           }
           if (vSubidas > 0) {
@@ -3217,14 +3093,10 @@ window.sincronizarAhora = async function() {
           console.warn("Subida ventas vendedor Firestore:", eVendVentas.message);
           log(`💾 ${misVentasLocales.length} ventas resguardadas en Local Storage`, 'info');
         }
-      } else {
-        log(`💾 ${misVentasLocales.length} ventas resguardadas en Local Storage`, 'info');
-      }
 
-      // 2. Subir clientes registrados por este vendedor
-      const misClientesLocales = clientesDB.filter(c => String(c.vendedorId) === miVendedorId);
-      let cSubidos = 0;
-      if (db && navigator.onLine) {
+        // 2. Subir SUS clientes registrados (incluyen sus visitas/agenda)
+        const misClientesLocales = clientesDB.filter(c => esMioDeVendedor(c));
+        let cSubidos = 0;
         try {
           for (const c of misClientesLocales) {
             if (!c.id) continue;
@@ -3232,9 +3104,10 @@ window.sincronizarAhora = async function() {
               ...c,
               adminId: miAdminId,
               vendedorId: miVendedorId,
-              negocio: miNegocio
+              negocio: miNegocio,
+              negocioId: miNegocioId
             });
-            await conTimeout(db.collection('clientes').doc(String(c.id)).set(cliDoc, { merge: true }), 3500);
+            await conTimeout(colTenant(db, tenant, 'clientes').doc(String(c.id)).set(cliDoc, { merge: true }), 3500);
             cSubidos++;
           }
           if (cSubidos > 0) {
@@ -3245,108 +3118,30 @@ window.sincronizarAhora = async function() {
           console.warn("Subida clientes vendedor Firestore:", eVendCli.message);
           log(`💾 ${misClientesLocales.length} clientes resguardados en Local Storage`, 'info');
         }
-      } else {
-        log(`💾 ${misClientesLocales.length} clientes resguardados en Local Storage`, 'info');
-      }
 
-      // 3. Descargar el catálogo oficial de productos del Administrador al Local Storage
-      let prodsDescargados = false;
-      if (db && navigator.onLine) {
+        // 3. Descargar el catálogo OFICIAL de productos de su Administrador
         try {
-          const snapProds = await conTimeout(db.collection('productos').get(), 5000);
+          const snapProds = await conTimeout(colTenant(db, tenant, 'productos').get(), 5000);
           if (snapProds && !snapProds.empty) {
-            const todosLosProds = snapProds.docs.map(d => ({ id: d.id, ...d.data() }));
-            
-            const prodsAdmin = todosLosProds.filter(p => {
-              // 1. Por ID de admin o authUid
-              if (p.adminId && (String(p.adminId) === miAdminId || (tenant.adminAuthUid && String(p.adminId) === String(tenant.adminAuthUid)))) return true;
-              if (p.adminAuthUid && (p.adminAuthUid === miAdminId || (tenant.adminAuthUid && p.adminAuthUid === tenant.adminAuthUid))) return true;
-              // 2. Por correo de admin
-              if (miEmail && p.adminEmail && String(p.adminEmail).toLowerCase() === miEmail) return true;
-              // 3. Por nombre de negocio (excluyendo 'GNET' genérico)
-              if (miNegocio && p.negocio && String(p.negocio).toLowerCase() === miNegocio.toLowerCase() && String(p.negocio).toLowerCase() !== 'gnet' && String(p.negocio).toLowerCase() !== 'gnet operaciones') return true;
-              // 4. Si el admin es adm_1
-              if (!p.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1'))) return true;
-              return false;
-            });
-            
+            const prodsAdmin = snapProds.docs.map(d => ({ id: d.id, ...d.data() }));
             if (prodsAdmin.length > 0) {
               productosDB = prodsAdmin.map(migrarProducto);
               guardarProductosDB();
               renderizarInventario();
               descargaCloudOk = true;
-              prodsDescargados = true;
               log(`📥 ${prodsAdmin.length} productos de "${miNegocio}" descargados a tu catálogo local`, 'success');
-            } else if (todosLosProds.length > 0) {
-              // Intento con el negocio del administrador más reciente registrado
-              const ultimoAdmin = (adminsDB || []).find(a => a.id !== 'adm_1' && a.negocio && a.negocio !== 'GNET' && a.negocio !== 'GNET Operaciones');
-              if (ultimoAdmin) {
-                const prodsUltimo = todosLosProds.filter(p => 
-                  p.adminId === ultimoAdmin.id || 
-                  (ultimoAdmin.authUid && p.adminId === ultimoAdmin.authUid) ||
-                  (p.negocio && p.negocio.toLowerCase() === ultimoAdmin.negocio.toLowerCase())
-                );
-                if (prodsUltimo.length > 0) {
-                  productosDB = prodsUltimo.map(migrarProducto);
-                  guardarProductosDB();
-                  renderizarInventario();
-                  descargaCloudOk = true;
-                  prodsDescargados = true;
-                  log(`📥 ${prodsUltimo.length} productos de "${ultimoAdmin.negocio}" sincronizados a tu inventario`, 'success');
-                }
-              }
             }
           }
         } catch (errProdsVend) {
           console.warn("Descarga productos vendedor Firestore:", errProdsVend.message);
         }
-      }
 
-      // Fallback local: Si no se descargaron de la nube, cargar del catálogo local existente
-      if (!prodsDescargados && productosDB.length === 0) {
-        const localNeg = localStorage.getItem('negocio_productos_' + miAdminId) ||
-          (tenant.adminAuthUid ? localStorage.getItem('negocio_productos_' + tenant.adminAuthUid) : null) ||
-          (miNegocio ? localStorage.getItem('negocio_productos_' + miNegocio) : null);
-        if (localNeg) {
-          try {
-            const parsed = JSON.parse(localNeg);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              productosDB = parsed.map(migrarProducto);
-              guardarProductosDB();
-              renderizarInventario();
-              log(`💾 ${parsed.length} productos recuperados de almacenamiento local de "${miNegocio}"`, 'info');
-              prodsDescargados = true;
-            }
-          } catch (_) {}
-        }
-        if (!prodsDescargados) {
-          const todosProds = JSON.parse(localStorage.getItem('productos_db') || '[]');
-          const locales = todosProds.filter(p => 
-            p.adminId === miAdminId || 
-            (miEmail && p.adminEmail === miEmail) || 
-            (miNegocio && p.negocio && p.negocio.toLowerCase() === miNegocio.toLowerCase() && p.negocio.toLowerCase() !== 'gnet')
-          );
-          if (locales.length > 0) {
-            productosDB = locales.map(migrarProducto);
-            guardarProductosDB();
-            renderizarInventario();
-            log(`💾 ${locales.length} productos recuperados de almacenamiento local`, 'info');
-          }
-        }
-      }
-
-      // 4. Descargar clientes asignados a este vendedor o del administrador
-      if (db && navigator.onLine) {
+        // 4. Descargar SUS clientes asignados (el filtro lo aplica Firestore,
+        //    no se descarga ningún cliente de otro vendedor)
         try {
-          const snapCli = await conTimeout(db.collection('clientes').get(), 5000);
+          const snapCli = await conTimeout(colTenant(db, tenant, 'clientes').where('vendedorId', '==', miVendedorId).get(), 5000);
           if (snapCli && !snapCli.empty) {
-            const cliAdmin = snapCli.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(c => 
-                (c.adminId === miAdminId || (!c.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1')))) && 
-                (String(c.vendedorId) === miVendedorId || !c.vendedorId)
-              );
-            
+            const cliAdmin = snapCli.docs.map(d => ({ id: d.id, ...d.data() }));
             if (cliAdmin.length > 0) {
               const mapCli = new Map(clientesDB.map(c => [String(c.id), c]));
               cliAdmin.forEach(r => mapCli.set(String(r.id), r));
@@ -3362,26 +3157,11 @@ window.sincronizarAhora = async function() {
           console.warn("Descarga clientes vendedor Firestore:", errCliVend.message);
         }
 
-        // 5. Descargar recibos de nómina asignados a este vendedor
+        // 5. Descargar SUS recibos de nómina emitidos por el Administrador
         try {
-          const snapNom = await conTimeout(db.collection('nominas').get(), 5000);
+          const snapNom = await conTimeout(colTenant(db, tenant, 'nominas').where('vendedorId', '==', miVendedorId).get(), 5000);
           if (snapNom && !snapNom.empty) {
-            const nomRemotas = snapNom.docs.map(d => ({ id: d.id, ...d.data() }));
-            const miAuthUid = String(usuarioActual.authUid || '');
-            const miVendUser = String(usuarioActual.usuario || '').toLowerCase();
-            const miVendEmail = String(usuarioActual.email || '').toLowerCase();
-            const miVendNom = String(usuarioActual.nombre || usuarioActual.displayName || '').toLowerCase();
-
-            const nomVend = nomRemotas.filter(n => {
-              if (String(n.vendedorId) === miVendedorId) return true;
-              if (miAuthUid && (String(n.vendedorId) === miAuthUid || String(n.vendedorAuthUid) === miAuthUid)) return true;
-              if (n.vendedorUsuario && miVendUser && String(n.vendedorUsuario).toLowerCase() === miVendUser) return true;
-              if (n.vendedorEmail && miVendEmail && String(n.vendedorEmail).toLowerCase() === miVendEmail) return true;
-              if (miVendNom && n.nombreVendedor && String(n.nombreVendedor).toLowerCase() === miVendNom) return true;
-              if (n.adminId === miAdminId && miVendNom && n.nombreVendedor && String(n.nombreVendedor).toLowerCase() === miVendNom) return true;
-              return false;
-            });
-            
+            const nomVend = snapNom.docs.map(d => ({ id: d.id, ...d.data() }));
             if (nomVend.length > 0) {
               const mapNom = new Map(nominasDB.map(n => [String(n.id), n]));
               nomVend.forEach(r => mapNom.set(String(r.id), r));
@@ -3391,7 +3171,7 @@ window.sincronizarAhora = async function() {
               descargaCloudOk = true;
               log(`📥 ${nomVend.length} recibos de nómina sincronizados desde tu Administrador`, 'success');
             } else {
-              log(`ℹ️ Nóminas: Sin recibos emitidos recientemente para ${usuarioActual.nombre || miVendUser}`, 'info');
+              log(`ℹ️ Nóminas: sin recibos emitidos recientemente para ${usuarioActual.nombre || ''}`, 'info');
             }
           }
         } catch (errNomVend) {
@@ -3409,7 +3189,7 @@ window.sincronizarAhora = async function() {
       renderizarMisClientes();
       renderizarNominasVendedor();
 
-      log(`🔒 Sincronización completa: Catálogo y nóminas de "${miNegocio}" actualizados.`, 'info');
+      log(`🔒 Sincronización completa con "${miNegocio}": catálogo recibido y tus datos compartidos con tu Administrador.`, 'info');
 
     } else {
       // ROOT: Sincronización general
@@ -3449,258 +3229,242 @@ window.loginUsuario = async function(userVal, passVal) {
   const pass = String(passVal || '').trim();
   const email = formatearEmail(userVal);
 
-  // 1. Si es Root SuperAdmin (GNET / root), verificar de inmediato
-  if ((raw === 'gnet' || raw === 'root' || raw.includes('root')) && (pass === '123456' || pass === 'root' || pass === 'GNET')) {
-    return {
-      user: { uid: 'root-01', email: 'root@gnet.com', displayName: 'Root SuperAdmin' },
-      rol: 'root',
-      nombre: 'Root SuperAdmin',
-      nombreCompleto: 'Root SuperAdmin'
-    };
-  }
+  // Correos a probar. El usuario puede escribir el nombre suelto ("carlos")
+  // o el correo completo. Algunas cuentas antigas quedaron en @ventas.com,
+  // así que se prueban los dos dominios antes de decir "contraseña incorrecta".
+  const candidatos = [];
+  const agregarCandidato = (c) => { if (c && !candidatos.includes(c)) candidatos.push(c); };
+  agregarCandidato(email);
+  if (email.endsWith('@ventas.campo')) agregarCandidato(email.replace(/@ventas\.campo$/, '@ventas.com'));
+  else if (email.endsWith('@ventas.com')) agregarCandidato(email.replace(/@ventas\.com$/, '@ventas.campo'));
 
   let authSuccess = false;
   let authUser = null;
+  let ultimoErrorAuth = null;
 
-  // 2. Intentar autenticación con Firebase Auth si está disponible y en línea
+  // 2. Autenticación con Firebase Auth (identidad real del usuario)
   if (typeof firebase !== 'undefined' && firebase.auth && navigator.onLine) {
-    try {
-      const authPromise = firebase.auth().signInWithEmailAndPassword(email, pass);
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 3000));
-      const res = await Promise.race([authPromise, timeoutPromise]);
-      authUser = res.user;
-      authSuccess = true;
-    } catch (err) {
-      console.warn("Intento Firebase Auth directo falló, consultando Firestore:", err.code, err.message);
+    for (const correo of candidatos) {
+      try {
+        const authPromise = firebase.auth().signInWithEmailAndPassword(correo, pass);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 8000));
+        const res = await Promise.race([authPromise, timeoutPromise]);
+        authUser = res.user;
+        authSuccess = true;
+        ultimoErrorAuth = null;
+        break;
+      } catch (err) {
+        console.warn("Firebase Auth falló:", correo, err.code, err.message);
+        ultimoErrorAuth = err;
+        // Si la cuenta existe pero la contraseña está mal, no tiene sentido
+        // probar el otro dominio: se corta aquí.
+        if (err.code !== 'auth/invalid-credential' && err.code !== 'auth/user-not-found' && err.code !== 'auth/email-not-found') {
+          break;
+        }
+      }
     }
   }
 
-  // 3. Consultar datos guardados directamente en Firebase Firestore
-  if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
+  // 3. Cargar el PERFIL del usuario autenticado.
+  //    Ya NO se escanean colecciones completas (eso rompía el aislamiento
+  //    entre negocios). Cada perfil se lee por su propio UID.
+  if (authSuccess && authUser && typeof firebase !== 'undefined' && firebase.firestore) {
+    const db = firebase.firestore();
+    const uid = authUser.uid;
+    let perfil = null;
+
+    // 3.A Administrador: doc id = su propio UID
     try {
-      const db = firebase.firestore();
-
-      // A. Buscar en colección 'admins' de Firestore
-      try {
-        const snapAdmins = await db.collection('admins').get();
-        if (!snapAdmins.empty) {
-          for (const doc of snapAdmins.docs) {
-            const data = doc.data();
-            const u = String(data.usuario || '').trim().toLowerCase();
-            const em = String(data.email || '').trim().toLowerCase();
-            const docPass = String(data.password || data.clave || data.pass || data.contrasena || '').trim();
-
-            if (u === raw || em === raw || u === email || em === email || (raw === 'admin' && (u.includes('admin') || em.includes('admin')))) {
-              if (authSuccess || docPass === pass || pass === '123456' || pass === '123' || !docPass) {
-                if (data.accesoActivo === false) {
-                  throw new Error("Acceso de administrador suspendido en Firebase");
-                }
-                const adminEncontrado = { id: doc.id, ...data };
-                adminsDB = [adminEncontrado, ...adminsDB.filter(a => String(a.id) !== String(doc.id))];
-                localStorage.setItem('admins_db', JSON.stringify(adminsDB));
-                return {
-                  user: { uid: doc.id, email: data.email || email, displayName: data.nombreCompleto || data.nombre || 'Administrador' },
-                  rol: 'admin',
-                  ...data
-                };
-              }
-            }
-          }
-        }
-      } catch (eAdm) {
-        console.warn("Firestore query admins:", eAdm);
+      const docAdm = await conTimeout(db.collection('admins').doc(uid).get(), 5000);
+      if (docAdm.exists) {
+        const data = docAdm.data();
+        if (data.accesoActivo === false) throw new Error("Acceso de administrador suspendido");
+        perfil = { id: uid, authUid: uid, rol: 'admin', ...data };
       }
+    } catch (eAdm) {
+      if (String(eAdm.message || '').includes('suspendido')) throw eAdm;
+      console.warn("Perfil admin:", eAdm.message);
+    }
 
-      // B. Buscar en colección 'vendedores' de Firestore
+    // 3.B Vendedor: doc id = su propio UID
+    if (!perfil) {
       try {
-        const snapVend = await db.collection('vendedores').get();
-        if (!snapVend.empty) {
-          for (const doc of snapVend.docs) {
-            const data = doc.data();
-            const u = String(data.usuario || '').trim().toLowerCase();
-            const em = String(data.email || '').trim().toLowerCase();
-            const docPass = String(data.password || data.clave || data.pass || data.contrasena || '').trim();
-
-            if (u === raw || em === raw || u === email || em === email) {
-              if (authSuccess || docPass === pass || pass === '123' || !docPass) {
-                if (data.accesoActivo === false) {
-                  throw new Error("Acceso de vendedor suspendido en Firebase");
-                }
-                const vendEncontrado = { id: doc.id, ...data };
-                vendedoresDB = [vendEncontrado, ...vendedoresDB.filter(v => String(v.id) !== String(doc.id))];
-                localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
-                poblarSelectsVendedores();
-                return {
-                  user: { uid: doc.id, email: data.email || email, displayName: data.nombre || data.displayName || 'Vendedor' },
-                  rol: 'vendedor',
-                  ...data
-                };
-              }
-            }
-          }
+        const docVend = await conTimeout(db.collection('vendedores').doc(uid).get(), 5000);
+        if (docVend.exists) {
+          const data = docVend.data();
+          if (data.accesoActivo === false) throw new Error("Acceso de vendedor suspendido");
+          perfil = { id: uid, authUid: uid, rol: 'vendedor', ...data };
         }
       } catch (eVend) {
-        console.warn("Firestore query vendedores:", eVend);
+        if (String(eVend.message || '').includes('suspendido')) throw eVend;
+        console.warn("Perfil vendedor:", eVend.message);
       }
-
-      // C. Buscar en colección genérica 'usuarios' de Firestore
-      try {
-        const snapUsers = await db.collection('usuarios').get();
-        if (!snapUsers.empty) {
-          for (const doc of snapUsers.docs) {
-            const data = doc.data();
-            const u = String(data.usuario || '').trim().toLowerCase();
-            const em = String(data.email || '').trim().toLowerCase();
-            const docPass = String(data.password || data.clave || data.pass || data.contrasena || '').trim();
-
-            if (u === raw || em === raw || u === email || em === email) {
-              if (authSuccess || docPass === pass || !docPass) {
-                const rolEncontrado = data.rol || (data.esAdmin ? 'admin' : 'vendedor');
-                return {
-                  user: { uid: doc.id, email: data.email || email, displayName: data.nombre || data.nombreCompleto || 'Usuario' },
-                  rol: rolEncontrado,
-                  ...data
-                };
-              }
-            }
-          }
-        }
-      } catch (eUsr) {
-        // Colección opcional
-      }
-
-      if (authSuccess && authUser) {
-        // Enriquecer con datos de admins o vendedores
-        const todosAdmins = [
-          ...(typeof adminsDB !== 'undefined' ? adminsDB : []),
-          ...JSON.parse(localStorage.getItem('admins_db') || '[]')
-        ];
-        const admMatch = todosAdmins.find(a => 
-          (a.email && a.email.toLowerCase() === email) || 
-          (a.usuario && a.usuario.toLowerCase() === raw) ||
-          (a.authUid && a.authUid === authUser.uid)
-        );
-        if (admMatch) {
-          return {
-            user: { uid: admMatch.id || authUser.uid, email: admMatch.email || email, displayName: admMatch.nombreCompleto || admMatch.nombre || 'Administrador' },
-            rol: 'admin',
-            authUid: authUser.uid,
-            ...admMatch
-          };
-        }
-        const todosVends = [
-          ...(typeof vendedoresDB !== 'undefined' ? vendedoresDB : []),
-          ...JSON.parse(localStorage.getItem('vendedores_db') || '[]')
-        ];
-        const vendMatch = todosVends.find(v => 
-          (v.email && v.email.toLowerCase() === email) || 
-          (v.usuario && v.usuario.toLowerCase() === raw) ||
-          (v.authUid && v.authUid === authUser.uid)
-        );
-        if (vendMatch) {
-          return {
-            user: { uid: vendMatch.id || authUser.uid, email: vendMatch.email || email, displayName: vendMatch.nombre || 'Vendedor' },
-            rol: 'vendedor',
-            authUid: authUser.uid,
-            ...vendMatch
-          };
-        }
-        const rolDetectado = (email.includes('admin') || raw.includes('admin')) ? 'admin' : 'vendedor';
-        return {
-          user: authUser,
-          rol: rolDetectado,
-          authUid: authUser.uid,
-          email: authUser.email,
-          nombre: authUser.displayName || raw
-        };
-      }
-    } catch (e) {
-      console.warn("Consulta Firestore falló:", e);
     }
-  }
 
-  // Si Firebase Auth validó con éxito
-  if (authSuccess && authUser) {
-    const todosAdmins = [
-      ...(typeof adminsDB !== 'undefined' ? adminsDB : []),
-      ...JSON.parse(localStorage.getItem('admins_db') || '[]')
-    ];
-    const admMatch = todosAdmins.find(a => 
-      (a.email && a.email.toLowerCase() === email) || 
-      (a.usuario && a.usuario.toLowerCase() === raw) ||
-      (a.authUid && a.authUid === authUser.uid)
-    );
-    if (admMatch) {
+    if (perfil) {
+      if (perfil.rol === 'admin') {
+        adminsDB = [perfil, ...adminsDB.filter(a => String(a.id) !== String(perfil.id))];
+        localStorage.setItem('admins_db', JSON.stringify(adminsDB));
+      } else {
+        vendedoresDB = [perfil, ...vendedoresDB.filter(v => String(v.id) !== String(perfil.id))];
+        localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
+        poblarSelectsVendedores();
+      }
       return {
-        user: { uid: admMatch.id || authUser.uid, email: admMatch.email || email, displayName: admMatch.nombreCompleto || admMatch.nombre || 'Administrador' },
-        rol: 'admin',
-        authUid: authUser.uid,
-        ...admMatch
+        user: { uid, email: authUser.email || email, displayName: perfil.nombreCompleto || perfil.nombre || 'Usuario' },
+        ...perfil
       };
     }
-    const todosVends = [
-      ...(typeof vendedoresDB !== 'undefined' ? vendedoresDB : []),
-      ...JSON.parse(localStorage.getItem('vendedores_db') || '[]')
-    ];
-    const vendMatch = todosVends.find(v => 
-      (v.email && v.email.toLowerCase() === email) || 
-      (v.usuario && v.usuario.toLowerCase() === raw) ||
-      (v.authUid && v.authUid === authUser.uid)
-    );
-    if (vendMatch) {
-      return {
-        user: { uid: vendMatch.id || authUser.uid, email: vendMatch.email || email, displayName: vendMatch.nombre || 'Vendedor' },
-        rol: 'vendedor',
-        authUid: authUser.uid,
-        ...vendMatch
-      };
-    }
-    const rolDetectado = (email.includes('admin') || raw.includes('admin')) ? 'admin' : 'vendedor';
-    return {
-      user: authUser,
-      rol: rolDetectado,
-      authUid: authUser.uid,
-      email: authUser.email,
-      nombre: authUser.displayName || raw
-    };
+
+    // 3.C Perfil no encontrado: se rechaza en vez de adivinar el rol
+    //     (adivinar permitía que un usuario entrara con permisos equivocados).
+    throw new Error("Tu cuenta no está registrada como administrador ni vendedor. Contacta al Superadministrador.");
   }
 
-  // 4. Fallback a registros locales de vendedores
-  const vend = vendedoresDB.find(v => 
-    (v.usuario && v.usuario.toLowerCase() === raw) || 
-    (v.email && v.email.toLowerCase() === raw) ||
-    (v.usuario && v.usuario.toLowerCase() === email)
-  );
-  if (vend && (vend.password === pass || !vend.password || pass === '123')) {
-    if (vend.accesoActivo === false) {
-      throw new Error("Acceso del vendedor no autorizado o suspendido");
-    }
-    return {
-      user: { uid: vend.id, email: vend.email || email, displayName: vend.nombre },
-      rol: 'vendedor',
-      ...vend
-    };
-  }
-
-  // 5. Fallback a registros locales de administradores
-  const adm = adminsDB.find(a => 
-    (a.usuario && a.usuario.toLowerCase() === raw) || 
+  // 4. Sin conexión: validar contra los perfiles guardados en este dispositivo
+  const todosAdmins = [
+    ...(typeof adminsDB !== 'undefined' ? adminsDB : []),
+    ...JSON.parse(localStorage.getItem('admins_db') || '[]')
+  ];
+  const adm = todosAdmins.find(a =>
+    (a.usuario && a.usuario.toLowerCase() === raw) ||
     (a.email && a.email.toLowerCase() === raw) ||
     (a.usuario && a.usuario.toLowerCase() === email) ||
-    (raw === 'admin' && ((a.usuario && a.usuario.includes('admin')) || (a.email && a.email.includes('admin'))))
+    (a.email && a.email.toLowerCase() === email)
   );
-  if (adm && (adm.password === pass || pass === '123456' || pass === '123' || pass === 'admin123' || !adm.password)) {
-    if (adm.accesoActivo === false) {
-      throw new Error("Acceso del administrador no autorizado");
-    }
+  if (adm && (adm.password === pass || !adm.password)) {
+    if (adm.accesoActivo === false) throw new Error("Acceso del administrador no autorizado");
     return {
-      user: { uid: adm.id, email: adm.email || email, displayName: adm.nombreCompleto || 'Administrador' },
+      user: { uid: adm.authUid || adm.id, email: adm.email || email, displayName: adm.nombreCompleto || 'Administrador' },
       rol: 'admin',
       ...adm
     };
   }
 
+  const vend = vendedoresDB.find(v =>
+    (v.usuario && v.usuario.toLowerCase() === raw) ||
+    (v.email && v.email.toLowerCase() === raw) ||
+    (v.usuario && v.usuario.toLowerCase() === email) ||
+    (v.email && v.email.toLowerCase() === email)
+  );
+  if (vend && (vend.password === pass || !vend.password)) {
+    if (vend.accesoActivo === false) {
+      throw new Error("Acceso del vendedor no autorizado o suspendido");
+    }
+    return {
+      user: { uid: vend.authUid || vend.id, email: vend.email || email, displayName: vend.nombre },
+      rol: 'vendedor',
+      ...vend
+    };
+  }
+
+  // 5. Si Firebase Auth validó pero no pudimos leer el perfil (p. ej. sin red),
+  //    usar los datos mínimos de la sesión. Las reglas de Firestore restringen
+  //    el acceso real a los datos, así que no se puede escalar privilegios.
+  if (authSuccess && authUser) {
+    return {
+      user: authUser,
+      rol: 'vendedor',
+      authUid: authUser.uid,
+      id: authUser.uid,
+      email: authUser.email,
+      nombre: authUser.displayName || raw
+    };
+  }
+
+  const codigoErrorAuth = ultimoErrorAuth && ultimoErrorAuth.code;
+  if (codigoErrorAuth === 'auth/user-not-found' || codigoErrorAuth === 'auth/email-not-found') {
+    throw new Error(`No existe ninguna cuenta con el usuario "${raw}". Se buscó: ${candidatos.join('  |  ')}`);
+  }
+  if (codigoErrorAuth === 'auth/user-disabled') {
+    throw new Error("Tu cuenta está deshabilitada. Contacta al Superadministrador.");
+  }
+  if (codigoErrorAuth === 'auth/too-many-requests') {
+    throw new Error("Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.");
+  }
   throw new Error("Usuario o contraseña incorrectos");
+};
+
+// ==========================================
+// CAMBIAR MI PROPIA CONTRASEÑA
+// Esta es la única forma segura de cambiar la contraseña real:
+// el usuario cambia la SUYA con su sesión iniciada en Firebase Auth.
+// ==========================================
+window.abrirModalCambiarMiClave = function() {
+  const act = document.getElementById('mi-clave-actual');
+  const nue = document.getElementById('mi-clave-nueva');
+  const con = document.getElementById('mi-clave-confirmar');
+  if (act) act.value = '';
+  if (nue) nue.value = '';
+  if (con) con.value = '';
+  const m = document.getElementById('modal-cambiar-mi-clave');
+  if (m) m.classList.remove('hidden');
+  if (act) setTimeout(() => act.focus(), 50);
+};
+
+window.cerrarModalCambiarMiClave = function() {
+  const m = document.getElementById('modal-cambiar-mi-clave');
+  if (m) m.classList.add('hidden');
+};
+
+window.guardarCambiarMiClave = async function() {
+  const actual = document.getElementById('mi-clave-actual').value;
+  const nueva = document.getElementById('mi-clave-nueva').value;
+  const confirmar = document.getElementById('mi-clave-confirmar').value;
+  if (!actual) return alert('Escribe tu contraseña actual.');
+  if (!nueva || nueva.length < 6) return alert('La nueva contraseña debe tener al menos 6 caracteres.');
+  if (nueva !== confirmar) return alert('Las contraseñas no coinciden.');
+  if (nueva === actual) return alert('La nueva contraseña debe ser distinta de la actual.');
+
+  try {
+    if (typeof firebase === 'undefined' || !firebase.auth) throw new Error('SDK de Firebase no disponible');
+    const user = firebase.auth().currentUser;
+    if (!user || !user.email) throw new Error('No hay una sesión de Firebase Authentication activa.');
+
+    // Reautenticar para tener permisos de cambio de contraseña
+    const cred = firebase.auth.EmailAuthProvider.credential(user.email, actual);
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(nueva);
+
+    // Copia de referencia (modo sin conexión). No es lo que permite entrar:
+    // lo que permite entrar es la contraseña real que acabamos de cambiar.
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      try {
+        const db = firebase.firestore();
+        const uid = user.uid;
+        const tenant = obtenerTenantActual();
+        const nid = negocioIdDe(tenant);
+        const esAdmin = (usuarioActual && usuarioActual.rol === 'admin');
+        if (esAdmin) {
+          await db.collection('admins').doc(uid).set({ password: nueva }, { merge: true });
+        } else {
+          await db.collection('vendedores').doc(uid).set({ password: nueva }, { merge: true });
+          if (nid && nid !== 'adm_1') {
+            await db.collection('negocios').doc(nid).collection('vendedores').doc(uid).set({ password: nueva }, { merge: true });
+          }
+        }
+      } catch (e) {
+        console.warn('Copia de referencia de contraseña no actualizada:', e.message);
+      }
+    }
+    if (usuarioActual) {
+      usuarioActual.password = nueva;
+      localStorage.setItem(usuarioActual.rol === 'admin' ? 'admins_db' : 'vendedores_db',
+        JSON.stringify(usuarioActual.rol === 'admin' ? adminsDB : vendedoresDB));
+    }
+
+    cerrarModalCambiarMiClave();
+    toast('🔑 Contraseña actualizada en Firebase Authentication');
+  } catch (err) {
+    console.warn('Cambio de contraseña:', err.code, err.message);
+    let msg = err.message || 'Error desconocido';
+    if (err.code === 'auth/wrong-password') msg = 'La contraseña actual no es correcta.';
+    if (err.code === 'auth/weak-password') msg = 'La nueva contraseña es demasiado débil.';
+    if (err.code === 'auth/user-token-expired' || err.code === 'auth/requires-recent-login') {
+      msg = 'Por seguridad vuelve a iniciar sesión y prueba de nuevo.';
+    }
+    alert('❌ No se pudo cambiar la contraseña: ' + msg);
+  }
 };
 
 window.autenticarVendedor = async function(e) {
@@ -3798,24 +3562,35 @@ window.autenticarRoot = async function(e) {
   const userVal = document.getElementById('root-user').value.trim();
   const passVal = document.getElementById('root-pass').value;
 
+  // El Superadministrador también es un usuario REAL de Firebase Auth.
+  // Así, cuando entra al panel Root, sus consultas van autenticadas y las
+  // reglas de Firestore lo reconocen (antes era un acceso "falso" sin sesión).
+  const emailRoot = userVal.includes('@') ? userVal.toLowerCase() : 'root@ventas.com';
+
   try {
     if (btn) { btn.textContent = "Conectando..."; btn.disabled = true; }
-    await loginUsuario(userVal, passVal);
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+      await firebase.auth().signInWithEmailAndPassword(emailRoot, passVal);
+    }
+    // Guardar el usuario Root en memoria para que el resto del panel funcione
+    usuarioActual = {
+      id: 'root',
+      authUid: (firebase.auth().currentUser && firebase.auth().currentUser.uid) || 'root',
+      email: emailRoot,
+      usuario: emailRoot,
+      rol: 'root',
+      nombre: 'Root SuperAdmin',
+      nombreCompleto: 'Root SuperAdmin',
+      negocio: 'GNET Central'
+    };
     cerrarModalRootLogin();
     document.getElementById('pantalla-login').classList.add('hidden');
     document.getElementById('pantalla-superadmin').classList.remove('hidden');
     cargarListaAdministradores();
     toast("🛡️ Sesión Root activada");
   } catch (err) {
-    if ((userVal === 'GNET' || userVal === 'root@gnet.com' || userVal === 'root') && (passVal === '123456' || passVal === 'root' || passVal === 'GNET')) {
-      cerrarModalRootLogin();
-      document.getElementById('pantalla-login').classList.add('hidden');
-      document.getElementById('pantalla-superadmin').classList.remove('hidden');
-      cargarListaAdministradores();
-      toast("🛡️ Sesión Root activada");
-    } else {
-      alert("❌ Credenciales Root incorrectas");
-    }
+    console.warn('Login Root:', err.code, err.message);
+    alert("❌ Credenciales Root incorrectas");
   } finally {
     if (btn) { btn.textContent = "Ingresar al Panel Root"; btn.disabled = false; }
   }
@@ -3826,7 +3601,7 @@ window.autenticarRoot = async function(e) {
 // ==========================================
 
 async function crearCuentaFirebaseAuth(email, password, displayName) {
-  if (typeof firebase === 'undefined' || !firebase.auth) return null;
+  if (typeof firebase === 'undefined' || !firebase.auth) return { ok: false, code: 'sin-sdk' };
   let secondaryApp = null;
   try {
     const secName = 'SecAuth_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
@@ -3837,14 +3612,27 @@ async function crearCuentaFirebaseAuth(email, password, displayName) {
     }
     const uid = cred.user.uid;
     await secondaryApp.delete();
-    return uid;
+    return { ok: true, uid };
   } catch (err) {
     console.warn("Firebase Auth secundario creación:", err.code, err.message);
     if (secondaryApp) {
       try { await secondaryApp.delete(); } catch (_) {}
     }
-    return null;
+    return { ok: false, code: err.code || 'error', message: err.message };
   }
+}
+
+// Mensaje claro para el administrador cuando la cuenta ya existe en Auth.
+function mensajeErrorAuth(code) {
+  if (code === 'auth/email-already-in-use') {
+    return 'Ese correo YA existe en Firebase Authentication, por lo que su contraseña NO se cambió. '
+      + 'Pide al vendedor que use "Cambiar mi contraseña" al entrar, o al Root que restablezca la clave real.';
+  }
+  if (code === 'auth/invalid-email') return 'El correo no es válido.';
+  if (code === 'auth/weak-password') return 'La contraseña es demasiado débil (mínimo 6 caracteres).';
+  if (code === 'auth/operation-not-allowed') return 'El proveedor de correo/contraseña no está habilitado en el proyecto.';
+  if (code === 'auth/too-many-requests') return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
+  return 'No se pudo crear la cuenta en Firebase Authentication.';
 }
 
 window.poblarSelectAdminAsignadoRoot = function() {
@@ -3856,7 +3644,8 @@ window.poblarSelectAdminAsignadoRoot = function() {
     return;
   }
   adminsDB.forEach(a => {
-    sel.innerHTML += `<option value="${a.id}" data-negocio="${esc(a.negocio || '')}" data-email="${esc(a.email || a.usuario || '')}">${esc(a.nombreCompleto || a.nombre)} (${esc(a.negocio || 'Sin Negocio')})</option>`;
+    const negocioId = a.authUid || a.negocioId || a.id;
+    sel.innerHTML += `<option value="${a.id}" data-negocio="${esc(a.negocio || '')}" data-email="${esc(a.email || a.usuario || '')}" data-authuid="${esc(a.authUid || '')}" data-negocioid="${esc(negocioId || '')}">${esc(a.nombreCompleto || a.nombre)} (${esc(a.negocio || 'Sin Negocio')})</option>`;
   });
 };
 
@@ -3939,16 +3728,22 @@ window.guardarNuevoAdmin = async function(e) {
 
   let adminIdAsignado = null;
   let adminEmailAsignado = null;
+  let adminAuthUidAsignado = null;
+  let negocioIdAsignado = null;
   if (rol === 'vendedor') {
     const selAdmin = document.getElementById('adm-vendedor-asignado');
     if (selAdmin && selAdmin.value) {
       adminIdAsignado = selAdmin.value;
       const opt = selAdmin.options[selAdmin.selectedIndex];
       adminEmailAsignado = opt ? opt.dataset.email : null;
+      adminAuthUidAsignado = opt ? (opt.dataset.authuid || null) : null;
+      negocioIdAsignado = opt ? (opt.dataset.negocioid || null) : null;
     }
     if (!adminIdAsignado && adminsDB.length > 0) {
       adminIdAsignado = adminsDB[0].id;
       adminEmailAsignado = adminsDB[0].email || adminsDB[0].usuario;
+      adminAuthUidAsignado = adminsDB[0].authUid || null;
+      negocioIdAsignado = adminsDB[0].authUid || adminsDB[0].id;
     }
   }
 
@@ -3965,6 +3760,8 @@ window.guardarNuevoAdmin = async function(e) {
     negocio: negocio,
     adminId: rol === 'vendedor' ? adminIdAsignado : uid,
     adminEmail: rol === 'vendedor' ? adminEmailAsignado : emailFormateado,
+    adminAuthUid: rol === 'vendedor' ? adminAuthUidAsignado : null,
+    negocioId: rol === 'vendedor' ? (negocioIdAsignado || adminAuthUidAsignado || adminIdAsignado) : null,
     diaPagoMensual: rol === 'admin' ? (Number(diaPago) || 1) : null,
     fechaUltimoPago: rol === 'admin' ? (ultimoPago || new Date().toISOString().slice(0, 10)) : null,
     accesoActivo: true,
@@ -3973,10 +3770,20 @@ window.guardarNuevoAdmin = async function(e) {
   };
 
   // 1. Crear usuario en Firebase Auth sin alterar la sesión activa de Root
+  let errorAuthCreacion = null;
   try {
-    const authUid = await crearCuentaFirebaseAuth(emailFormateado, password, nombre);
-    if (authUid) {
-      docUsuario.authUid = authUid;
+    const resAuth = await crearCuentaFirebaseAuth(emailFormateado, password, nombre);
+    if (resAuth.ok) {
+      docUsuario.authUid = resAuth.uid;
+      // El UID de Auth identifica de forma estable al negocio (si es admin)
+      // y al propio usuario (si es vendedor). Es la pieza clave del aislamiento.
+      docUsuario.id = resAuth.uid;
+      if (rol === 'admin') {
+        docUsuario.negocioId = resAuth.uid;
+      }
+    } else {
+      errorAuthCreacion = resAuth.code;
+      docUsuario.credencialPendiente = true;
     }
   } catch (errAuth) {
     console.warn("Error creando cuenta en Firebase Auth:", errAuth);
@@ -3988,12 +3795,15 @@ window.guardarNuevoAdmin = async function(e) {
     try {
       const db = firebase.firestore();
       if (rol === 'admin') {
-        await db.collection('admins').doc(uid).set(docUsuario, { merge: true });
+        await db.collection('admins').doc(docUsuario.id).set(docUsuario, { merge: true });
       } else {
-        await db.collection('vendedores').doc(uid).set(docUsuario, { merge: true });
+        await db.collection('vendedores').doc(docUsuario.id).set(docUsuario, { merge: true });
+        // Miembro del equipo dentro del negocio al que fue asignado
+        const nidVend = docUsuario.negocioId || docUsuario.adminAuthUid;
+        if (nidVend) {
+          await db.collection('negocios').doc(String(nidVend)).collection('vendedores').doc(docUsuario.id).set(docUsuario, { merge: true });
+        }
       }
-      // Guardar también en colección unificada 'usuarios'
-      await db.collection('usuarios').doc(uid).set(docUsuario, { merge: true });
       guardadoEnFirestore = true;
     } catch (e) {
       console.warn("Error guardando en Firestore:", e);
@@ -4018,7 +3828,11 @@ window.guardarNuevoAdmin = async function(e) {
   const rolTexto = rol === 'admin' ? 'Administrador 👑' : 'Vendedor 💼';
   const statusFirebase = guardadoEnFirestore ? '✅ Sincronizado en Firebase Firestore' : '⚠️ Guardado en memoria local';
 
-  alert(`✅ Usuario creado con éxito en Firebase:\n\n• Nombre: ${nombre}\n• Rol Asignado: ${rolTexto}\n• Usuario: ${usuario}\n• Correo: ${emailFormateado}\n• Estado: ${statusFirebase}\n\nEl usuario únicamente podrá acceder a las pantallas correspondientes a su rol.`);
+  if (errorAuthCreacion) {
+    alert(`⚠️ El usuario se registró en el sistema, pero NO en Firebase Authentication.\n\n• Nombre: ${nombre}\n• Rol Asignado: ${rolTexto}\n• Usuario: ${usuario}\n• Correo: ${emailFormateado}\n• Estado: ${statusFirebase}\n\n${mensajeErrorAuth(errorAuthCreacion)}\n\nHasta que la cuenta exista en Authentication, este usuario NO podrá iniciar sesión.`);
+  } else {
+    alert(`✅ Usuario creado con éxito en Firebase:\n\n• Nombre: ${nombre}\n• Rol Asignado: ${rolTexto}\n• Usuario: ${usuario}\n• Correo: ${emailFormateado}\n• Estado: ${statusFirebase}\n\nEl usuario únicamente podrá acceder a las pantallas correspondientes a su rol.`);
+  }
 
   document.getElementById('form-crear-admin').reset();
   alternarCamposRolRoot();
@@ -4030,33 +3844,32 @@ window.cargarListaAdministradores = function() {
   const listaDiv = document.getElementById('lista-admins');
   if (!listaDiv) return;
 
-  if (typeof firebase !== 'undefined' && firebase.firestore) {
+  // Consulta puntual (no onSnapshot): con las reglas de aislamiento,
+  // las escuchas en tiempo real de colecciones completas solo están
+  // permitidas para Root y consumen ancho de banda innecesario.
+  if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
     try {
       const db = firebase.firestore();
-      
-      // Escuchar admins
-      db.collection('admins').onSnapshot((snap) => {
+      db.collection('admins').get().then(snap => {
         if (snap && !snap.empty) {
-          const adminsRemotos = snap.docs.map(d => ({ id: d.id, rol: 'admin', ...d.data() }));
-          adminsDB = adminsRemotos;
+          adminsDB = snap.docs.map(d => ({ id: d.id, rol: 'admin', ...d.data() }));
           localStorage.setItem('admins_db', JSON.stringify(adminsDB));
-          renderizarAdminsEnLista();
         }
-      }, () => {});
-
-      // Escuchar vendedores
-      db.collection('vendedores').onSnapshot((snapVend) => {
+        return db.collection('vendedores').get();
+      }).then(snapVend => {
         if (snapVend && !snapVend.empty) {
-          const vendRemotos = snapVend.docs.map(d => ({ id: d.id, rol: 'vendedor', ...d.data() }));
-          vendedoresDB = vendRemotos;
+          vendedoresDB = snapVend.docs.map(d => ({ id: d.id, rol: 'vendedor', ...d.data() }));
           localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
-          poblarSelectsVendedores();
-          renderizarAdminsEnLista();
         }
-      }, () => {});
-
+        poblarSelectsVendedores();
+        renderizarAdminsEnLista();
+      }).catch(e => {
+        console.warn("Firestore listas error:", e.message);
+        renderizarAdminsEnLista();
+      });
+      return;
     } catch (e) {
-      console.warn("Firestore listeners error:", e);
+      console.warn("Firestore listas error:", e);
     }
   }
   renderizarAdminsEnLista();
@@ -4251,9 +4064,12 @@ window.guardarEdicionAdmin = async function() {
     if (rolAnterior === 'admin') {
       adminsDB = adminsDB.filter(a => String(a.id) !== String(usuario.id));
       vendedoresDB = [usuario, ...vendedoresDB];
+      usuario.negocioId = usuario.negocioId || usuario.authUid || usuario.id;
     } else {
       vendedoresDB = vendedoresDB.filter(v => String(v.id) !== String(usuario.id));
       adminsDB = [usuario, ...adminsDB];
+      // Al convertirse en administrador, su negocio pasa a ser su propio UID
+      usuario.negocioId = usuario.authUid || usuario.id;
     }
     // Borrar de colección previa en Firestore
     if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -4271,9 +4087,16 @@ window.guardarEdicionAdmin = async function() {
   // Guardar en Firestore
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
+      const dbFs = firebase.firestore();
       const colecNueva = rolNuevo === 'admin' ? 'admins' : 'vendedores';
-      await firebase.firestore().collection(colecNueva).doc(String(usuario.id)).set(usuario, { merge: true });
-      await firebase.firestore().collection('usuarios').doc(String(usuario.id)).set(usuario, { merge: true });
+      await dbFs.collection(colecNueva).doc(String(usuario.id)).set(usuario, { merge: true });
+      // Si es vendedor, mantener su registro dentro del negocio asignado
+      if (rolNuevo === 'vendedor') {
+        const nidEdit = usuario.negocioId || usuario.adminAuthUid;
+        if (nidEdit) {
+          await dbFs.collection('negocios').doc(String(nidEdit)).collection('vendedores').doc(String(usuario.id)).set(usuario, { merge: true });
+        }
+      }
     } catch (e) {
       console.warn("Error guardando en Firestore:", e);
     }
@@ -4299,7 +4122,12 @@ window.toggleAccesoUsuarioRoot = async function(id, rol) {
     try {
       const col = (usuario.rol || rol) === 'admin' ? 'admins' : 'vendedores';
       await firebase.firestore().collection(col).doc(String(usuario.id)).set({ accesoActivo: nuevoEstado }, { merge: true });
-      await firebase.firestore().collection('usuarios').doc(String(usuario.id)).set({ accesoActivo: nuevoEstado }, { merge: true });
+      if ((usuario.rol || rol) === 'vendedor') {
+        const nidAcc = usuario.negocioId || usuario.adminAuthUid;
+        if (nidAcc) {
+          await firebase.firestore().collection('negocios').doc(String(nidAcc)).collection('vendedores').doc(String(usuario.id)).set({ accesoActivo: nuevoEstado }, { merge: true });
+        }
+      }
     } catch (e) {
       console.warn("Firestore toggle acceso error:", e);
     }
@@ -4357,7 +4185,12 @@ window.guardarRootResetAdmin = async function() {
       try {
         const col = (usuario.rol || userResetPasswordRol) === 'admin' ? 'admins' : 'vendedores';
         await firebase.firestore().collection(col).doc(String(usuario.id)).set({ password: p1 }, { merge: true });
-        await firebase.firestore().collection('usuarios').doc(String(usuario.id)).set({ password: p1 }, { merge: true });
+        if ((usuario.rol || userResetPasswordRol) === 'vendedor') {
+          const nidPwd = usuario.negocioId || usuario.adminAuthUid;
+          if (nidPwd) {
+            await firebase.firestore().collection('negocios').doc(String(nidPwd)).collection('vendedores').doc(String(usuario.id)).set({ password: p1 }, { merge: true });
+          }
+        }
       } catch (e) {
         console.warn("Error actualizando clave en Firestore:", e);
       }
@@ -4367,6 +4200,12 @@ window.guardarRootResetAdmin = async function() {
   cerrarModalRootResetAdmin();
   toast("🔑 Contraseña actualizada exitosamente en Firebase");
   renderizarAdminsEnLista();
+  alert('📌 La clave de referencia quedó guardada para "' + (usuario.nombreCompleto || usuario.nombre || usuario.usuario) + '".\n\n'
+    + 'La contraseña REAL de Firebase Authentication NO se puede cambiar desde el navegador '
+    + '(Firebase sólo permite cambiar la del usuario que tiene la sesión iniciada).\n\n'
+    + 'Para restablecerla de verdad, ejecuta:\n'
+    + 'node scripts/establecer-clave.mjs ' + (usuario.email || usuario.usuario) + ' "' + p1 + '"\n\n'
+    + 'El UID, el correo y todos sus datos se conservan.');
 };
 
 window.eliminarUsuarioRoot = async function(id, nombre, rol) {
@@ -4374,9 +4213,17 @@ window.eliminarUsuarioRoot = async function(id, nombre, rol) {
 
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
+      const dbFs = firebase.firestore();
       const col = rol === 'admin' ? 'admins' : 'vendedores';
-      await firebase.firestore().collection(col).doc(String(id)).delete();
-      await firebase.firestore().collection('usuarios').doc(String(id)).delete();
+      const usuario = adminsDB.find(a => String(a.id) === String(id)) ||
+                      vendedoresDB.find(v => String(v.id) === String(id));
+      await dbFs.collection(col).doc(String(id)).delete();
+      if (rol !== 'admin') {
+        const nidDel = usuario && (usuario.negocioId || usuario.adminAuthUid);
+        if (nidDel) {
+          await dbFs.collection('negocios').doc(String(nidDel)).collection('vendedores').doc(String(id)).delete();
+        }
+      }
     } catch (e) {
       console.warn("Error eliminando de Firestore:", e);
     }
@@ -4471,6 +4318,7 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
           rol = 'vendedor';
           perfil = { ...vend, authUid: user.uid };
         } else if (typeof firebase !== 'undefined' && firebase.firestore) {
+          // Lectura directa por UID (sin escanear colecciones completas)
           try {
             const db = firebase.firestore();
             const docAdm = await db.collection('admins').doc(user.uid).get();
@@ -4482,20 +4330,17 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
               if (docVend.exists) {
                 rol = 'vendedor';
                 perfil = { id: docVend.id, authUid: user.uid, rol: 'vendedor', ...docVend.data() };
-              } else {
-                const docUsr = await db.collection('usuarios').doc(user.uid).get();
-                if (docUsr.exists) {
-                  const d = docUsr.data();
-                  rol = d.rol || (d.esAdmin ? 'admin' : 'vendedor');
-                  perfil = { id: docUsr.id, authUid: user.uid, rol, ...d };
-                }
               }
             }
           } catch (_) {}
         }
 
+        // Si no se pudo determinar el rol, no se adivina: se cierra la sesión
+        // para evitar que alguien entre con permisos inventados.
         if (!rol) {
-          rol = email.includes('admin') ? 'admin' : 'vendedor';
+          console.warn('No se encontró perfil para', user.uid, '- cerrando sesión');
+          try { await firebase.auth().signOut(); } catch (_) {}
+          return;
         }
 
         const nombreDetectado = perfil?.nombreCompleto || perfil?.nombre || user.displayName || (rol === 'admin' ? 'Administrador' : 'Vendedor');
@@ -4525,50 +4370,47 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
 }
 
 window.cargarListaVendedores = function() {
-  if (typeof firebase !== 'undefined' && firebase.firestore) {
-    try {
-      firebase.firestore().collection('vendedores').onSnapshot((snap) => {
+  // Root: directorio global (consulta puntual, no escucha en vivo).
+  // Para Admin y Vendedor, los datos de su equipo llegan por la ruta
+  // aislada negocios/{negocioId}/vendedores durante la sincronización.
+  if (!usuarioActual) {
+    if (typeof firebase !== 'undefined' && firebase.firestore && navigator.onLine) {
+      firebase.firestore().collection('vendedores').get().then(snap => {
         if (snap && !snap.empty) {
-          const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-          // Actualizar registro global para logins en este dispositivo
-          const globalVends = JSON.parse(localStorage.getItem('vendedores_db') || '[]');
-          const mapGlob = new Map(globalVends.map(v => [String(v.id), v]));
-          remotos.forEach(r => mapGlob.set(String(r.id), r));
-          localStorage.setItem('vendedores_db', JSON.stringify(Array.from(mapGlob.values())));
-
-          if (usuarioActual && usuarioActual.rol === 'admin') {
-            const miAdminId = String(usuarioActual.id || '');
-            const miEmail = String(usuarioActual.email || usuarioActual.usuario || '').toLowerCase();
-            const miNegocio = String(usuarioActual.negocio || '').toLowerCase();
-            const misVends = remotos.filter(v => {
-              if (v.adminId && (String(v.adminId) === miAdminId || (usuarioActual.authUid && String(v.adminId) === String(usuarioActual.authUid)))) return true;
-              if (v.adminEmail && String(v.adminEmail).toLowerCase() === miEmail) return true;
-              if (miNegocio && v.negocio && String(v.negocio).toLowerCase() === miNegocio && v.negocio !== 'GNET') return true;
-              if (!v.adminId && (miAdminId === 'adm_1' || miAdminId.includes('1'))) return true;
-              return false;
-            });
-            vendedoresDB = misVends;
-            localStorage.setItem('negocio_vendedores_' + miAdminId, JSON.stringify(misVends));
-            localStorage.setItem('vendedores_db_' + miAdminId, JSON.stringify(misVends));
-          } else if (usuarioActual && usuarioActual.rol === 'vendedor') {
-            vendedoresDB = remotos.filter(v => 
-              String(v.id) === String(usuarioActual.id) ||
-              (v.authUid && String(v.authUid) === String(usuarioActual.id)) ||
-              (usuarioActual.authUid && v.authUid && String(v.authUid) === String(usuarioActual.authUid)) ||
-              (v.email && String(v.email).toLowerCase() === String(usuarioActual.email || '').toLowerCase()) ||
-              (v.usuario && String(v.usuario).toLowerCase() === String(usuarioActual.usuario || '').toLowerCase())
-            );
-          } else if (usuarioActual && (usuarioActual.rol === 'root' || usuarioActual.id === 'root')) {
-            vendedoresDB = remotos;
-          }
+          vendedoresDB = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          localStorage.setItem('vendedores_db', JSON.stringify(vendedoresDB));
           poblarSelectsVendedores();
           renderizarVendedores();
         }
-      }, (e) => console.warn("Snapshot vendedores warning:", e));
-    } catch (e) {
-      console.warn("cargarListaVendedores error:", e);
+      }).catch(() => {});
     }
+    return;
+  }
+
+  if (usuarioActual.rol === 'admin' || usuarioActual.rol === 'vendedor') {
+    const tenant = obtenerTenantActual();
+    const nid = negocioIdDe(tenant);
+    if (!nid || nid === 'adm_1' || typeof firebase === 'undefined' || !firebase.firestore || !navigator.onLine) return;
+    const db = firebase.firestore();
+    const consulta = usuarioActual.rol === 'vendedor'
+      ? db.collection('negocios').doc(nid).collection('vendedores').doc(String(usuarioActual.authUid || usuarioActual.id))
+      : db.collection('negocios').doc(nid).collection('vendedores');
+    const promesa = usuarioActual.rol === 'vendedor' ? consulta.get() : consulta.get();
+    promesa.then(snap => {
+      if (usuarioActual.rol === 'vendedor') {
+        if (snap.exists) {
+          // El vendedor solo se conoce a sí mismo en el equipo del negocio
+          vendedoresDB = [{ id: snap.id, ...snap.data() }];
+          localStorage.setItem('negocio_vendedores_' + nid, JSON.stringify(vendedoresDB));
+        }
+      } else if (snap && !snap.empty) {
+        vendedoresDB = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        localStorage.setItem('negocio_vendedores_' + nid, JSON.stringify(vendedoresDB));
+        localStorage.setItem('vendedores_db_' + nid, JSON.stringify(vendedoresDB));
+      }
+      poblarSelectsVendedores();
+      renderizarVendedores();
+    }).catch(e => console.warn("cargarListaVendedores:", e.message));
   }
 };
 
