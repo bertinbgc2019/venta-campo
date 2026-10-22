@@ -168,8 +168,11 @@ const yDe = (t) => { const l = lineas.find(x => x.txt.indexOf(t) >= 0); return l
 const A4_ANCHO = 595, A4_ALTO = 842;
 
 const checks = [
-  ["Encabezado con el nombre del negocio", en("PASALE")],
   ["Titulo del documento", en("NOTA DE VENTA")],
+  ["NO aparece el nombre del negocio", !en("PASALE")],
+  ["NO aparece el lema del negocio", !en("equipo de campo")],
+  ["Aviso: nota informativa", en("nota informativa")],
+  ["Aviso: no es una factura", en("no es una factura")],
   ["Folio", en("Folio: 1792610348856")],
   ["Fecha de emision", en("21/10/2026")],
   ["Etiqueta CLIENTE", en("CLIENTE")],
@@ -191,7 +194,7 @@ const checks = [
   ["Bloque NOTAS", en("NOTAS")],
   ["Texto de la nota", en("Entregar en la manana del lunes.")],
   ["Cierre de agradecimiento", en("Gracias por su preferencia")],
-  ["Maquetacion: la cabecera esta arriba", (yDe("PASALE") || 0) > A4_ALTO - 80],
+  ["Maquetacion: la cabecera esta arriba", (yDe("NOTA DE VENTA") || 0) > A4_ALTO - 80],
   ["Maquetacion: el pie esta abajo", (yDe("Gracias por su preferencia") || 0) < 120],
   ["Maquetacion: la tabla esta en la mitad superior", (yDe("PRODUCTO") || 0) > A4_ALTO * 0.55],
   ["Maquetacion: los totales estan por debajo de la tabla", (yDe("TOTAL") || 0) < (yDe("PRODUCTO") || 0)],

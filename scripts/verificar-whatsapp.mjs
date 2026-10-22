@@ -120,16 +120,20 @@ comprobar("Si cancela: sólo una pregunta", preguntas.length === 1, "preguntas: 
 // La app usa el helper en los dos envíos y el modal existe
 // ---------------------------------------------------------------------
 comprobar(
-  "El ticket PDF usa el helper de número",
-  app.includes("const numero = await numeroWhatsAppParaEnvio(op);")
-);
-comprobar(
   "El resumen de texto usa el helper de número",
   app.includes("const numero = await numeroWhatsAppParaEnvio(ultimaOperacion);")
 );
 comprobar(
   "Ya no se manda wa.me sin número válido",
   !app.includes("telefonoWhatsApp(ultimaOperacion.telefono)")
+);
+comprobar(
+  "El envío del PDF por WhatsApp fue retirado",
+  !app.includes("enviarTicketPDFPorWhatsApp")
+);
+comprobar(
+  "El PDF se sigue generando para descargar",
+  app.includes("window.generarTicketPDF") && app.includes("construirTicketPDF(op).save(")
 );
 comprobar(
   "El modal de captura del número está en el HTML",

@@ -986,10 +986,9 @@
         <h3 id="wa-titulo" class="text-lg font-bold text-emerald-700"></h3>
         <p id="wa-resumen" class="text-xs text-slate-600"></p>
       </div>
-      <p class="text-sm text-center text-slate-800">¿Quieres enviar solo el resumen por WhatsApp?</p>
+      <p class="text-sm text-center text-slate-800">¿Quieres enviar la nota por WhatsApp?</p>
       <div class="space-y-2">
-        <button onclick="enviarTicketPDFPorWhatsApp()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold p-3 rounded-xl text-sm transition">📄 Enviar como PDF (adjunto)</button>
-        <button onclick="enviarPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">📲 Sí, enviar el resumen (texto)</button>
+        <button onclick="enviarPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-xl text-sm transition">📲 Sí, enviar la nota por WhatsApp</button>
         <button onclick="cerrarModalWhatsApp()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm transition">No, terminar</button>
       </div>
     </div>
@@ -1181,13 +1180,12 @@
     <div class="bg-white border border-amber-300 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4 text-center">
       <p class="text-3xl">🧾</p><h3 class="text-lg font-bold text-slate-900">Venta registrada</h3>
       <p id="ticket-resumen" class="text-xs text-slate-600"></p>
-      <p class="text-sm text-slate-800">¿Deseas enviar el ticket en PDF por WhatsApp?</p>
+      <p class="text-sm text-slate-800">¿Deseas descargar el ticket en PDF?</p>
       <div class="space-y-2">
-        <button onclick="enviarTicketPDFPorWhatsApp()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-3 rounded-xl text-sm">📄 Enviar ticket PDF por WhatsApp</button>
-        <button onclick="generarTicketPDF()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl text-sm">⬇️ Solo descargar el PDF</button>
+        <button onclick="generarTicketPDF()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl text-sm">⬇️ Descargar ticket en PDF</button>
         <button onclick="terminarDespuesTicket()" class="w-full bg-white hover:bg-slate-200 border border-slate-300 text-slate-800 font-semibold p-3 rounded-xl text-sm">No, continuar</button>
       </div>
-      <p class="text-[10px] text-slate-400">En el celular se abre la hoja de compartir para adjuntar el PDF a WhatsApp. En computadora se descarga el archivo para adjuntarlo manualmente.</p>
+      <p class="text-[10px] text-slate-400">El PDF es una nota informativa, no una factura.</p>
     </div>
   </div>
 

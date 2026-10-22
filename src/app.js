@@ -2633,27 +2633,20 @@ function construirTicketPDF(op) {
   const folio = String(op.id || Date.now());
 
   // ---------- Encabezado ----------
+  // Sin nombre de negocio ni lema: el documento es del cliente, no publicidad.
   doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
-  doc.rect(0, 0, W, 42, 'F');
+  doc.rect(0, 0, W, 32, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(19);
-  doc.text(String(op.negocioNombre || 'Ventas de Campo'), M, 18, { maxWidth: anchoUtil - 55 });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(219, 234, 254);
-  doc.text('Ropa táctica y equipo de campo', M, 25.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(255, 255, 255);
-  doc.text(op.tipo === 'pedido' ? 'PEDIDO' : 'NOTA DE VENTA', W - M, 17, { align: 'right' });
+  doc.setFontSize(20);
+  doc.text(op.tipo === 'pedido' ? 'PEDIDO' : 'NOTA DE VENTA', M, 20);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(219, 234, 254);
-  doc.text('Folio: ' + folio, W - M, 23, { align: 'right' });
-  doc.text(new Date(op.fecha).toLocaleString('es-MX'), W - M, 28, { align: 'right' });
+  doc.text('Folio: ' + folio, W - M, 17, { align: 'right' });
+  doc.text(new Date(op.fecha).toLocaleString('es-MX'), W - M, 23, { align: 'right' });
 
-  let y = 54;
+  let y = 44;
 
   // ---------- Datos del cliente / venta ----------
   doc.setFillColor(248, 250, 252);
@@ -2774,16 +2767,19 @@ function construirTicketPDF(op) {
   // ---------- Pie ----------
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.3);
-  doc.line(M, 268, W - M, 268);
+  doc.line(M, 264, W - M, 264);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(VERDE[0], VERDE[1], VERDE[2]);
-  doc.text('¡Gracias por su preferencia!', W / 2, 277, { align: 'center' });
+  doc.text('¡Gracias por su preferencia!', W / 2, 272, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+  doc.text('Este documento es una nota informativa, no es una factura.', W / 2, 278, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
-  doc.text('Documento generado el ' + new Date().toLocaleString('es-MX'), W / 2, 282, { align: 'center' });
-  doc.text('Folio ' + folio + ' · ' + (op.negocioNombre || 'Ventas de Campo'), W / 2, 286, { align: 'center' });
+  doc.text('Documento generado el ' + new Date().toLocaleString('es-MX'), W / 2, 283, { align: 'center' });
+  doc.text('Folio ' + folio, W / 2, 287, { align: 'center' });
 
   return doc;
 }
@@ -2800,72 +2796,16 @@ window.generarTicketPDF = function() {
   construirTicketPDF(op).save(nombreArchivoTicket(op));
   document.getElementById('modal-ticket').classList.add('hidden');
   toast('✅ Ticket PDF generado');
-  // También se ofrece el envío por WhatsApp: si el cliente no está
-  // registrado se le pregunta el número en el momento de enviar.
+  // Después de descargar se puede enviar la nota por texto (WhatsApp):
+  // si el cliente no está registrado se le pide el número en ese momento.
   mostrarModalWhatsApp(op);
 };
-
-// Envía el ticket como PDF adjunto por WhatsApp.
-// En el celular abre la hoja de compartir: eliges WhatsApp y se adjunta el PDF.
-// En escritorio (donde no se puede adjuntar) descarga el PDF y abre WhatsApp.
-window.enviarTicketPDFPorWhatsApp = async function() {
-  if (!ultimaOperacion) return;
-  if (!window.jspdf || !window.jspdf.jsPDF) return alert('Generador PDF no disponible.');
-  const op = ultimaOperacion;
-
-  // Destino: si el cliente está registrado se usa su número guardado;
-  // si no está registrado se le pide el número al usuario.
-  const numero = await numeroWhatsAppParaEnvio(op);
-  if (!numero) {
-    toast('⚠️ Se necesita un número de WhatsApp para enviar el ticket');
-    return;
-  }
-
-  const doc = construirTicketPDF(op);
-  const archivo = nombreArchivoTicket(op);
-  const texto = 'Hola ' + (op.clienteNombre || '') + ' 👋\nTe enviamos tu ' + (op.tipo === 'pedido' ? 'pedido' : 'ticket de venta') + ' por ' + fmtMoneda(op.total) + '.\n¡Gracias por tu preferencia!';
-
-  try {
-    const blob = doc.output('blob');
-    const archivoPdf = new File([blob], archivo, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
-      await navigator.share({ files: [archivoPdf], title: 'Ticket de venta', text: texto });
-      cerrarModalesTicket();
-      toast('✅ Ticket PDF enviado');
-      ultimaOperacion = null;
-      return;
-    }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return;   // el usuario canceló el diálogo
-    console.warn('No se pudo compartir el PDF:', e && e.message);
-  }
-
-  // Respaldo: se descarga el PDF y se abre WhatsApp con el número destino
-  doc.save(archivo);
-  window.open('https://wa.me/' + numero + '?text=' + encodeURIComponent(texto + '\n\n(Adjunta el archivo PDF que se acaba de descargar.)'), '_blank');
-  cerrarModalesTicket();
-  toast('📄 Ticket PDF descargado');
-};
-
-// Cierra los modales de ticket y de WhatsApp
-function cerrarModalesTicket() {
-  const mt = document.getElementById('modal-ticket');
-  const mw = document.getElementById('modal-whatsapp');
-  if (mt) mt.classList.add('hidden');
-  if (mw) mw.classList.add('hidden');
-}
 
 // Expuesto para pruebas y soporte
 window.construirTicketPDF = construirTicketPDF;
 window.nombreArchivoTicket = nombreArchivoTicket;
 window.normalizarNumeroWhatsApp = normalizarNumeroWhatsApp;
 window.numeroWhatsAppParaEnvio = numeroWhatsAppParaEnvio;
-
-function telefonoWhatsApp(tel) {
-  let digitos = String(tel || '').replace(/\D/g, '');
-  if (digitos.length === 10) digitos = CODIGO_PAIS_WHATSAPP + digitos;
-  return digitos;
-}
 
 // Normaliza un teléfono a un número válido de WhatsApp (lada 52 + 10 dígitos).
 // Devuelve '' si con los datos capturados no se puede armar un número válido.
