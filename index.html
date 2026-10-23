@@ -641,15 +641,11 @@
       <form onsubmit="autenticarVendedor(event)" class="space-y-3">
         <div>
           <label class="text-xs text-slate-600 block mb-1">Usuario o Correo</label>
-          <input type="text" id="login-vend-user" required value="juan" placeholder="vendedor@ejemplo.com o juan" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
+          <input type="text" id="login-vend-user" required placeholder="Usuario o correo" autocomplete="username" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
         </div>
         <div>
           <label class="text-xs text-slate-600 block mb-1">Contraseña</label>
-          <input type="password" id="login-vend-pass" required value="123" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
-        </div>
-        <div class="bg-blue-50/70 p-2 rounded-lg border border-blue-100 text-[11px] text-blue-700 flex justify-between items-center">
-          <span>Demo pre-cargado: <strong>juan</strong> / <strong>123</strong></span>
-          <button type="button" onclick="document.getElementById('login-vend-user').value='juan';document.getElementById('login-vend-pass').value='123';" class="underline text-[10px] font-bold">Llenar</button>
+          <input type="password" id="login-vend-pass" required placeholder="Contraseña" autocomplete="current-password" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-blue-500">
         </div>
         <button type="submit" id="btn-login-vendedor" class="w-full bg-blue-600 hover:bg-blue-500 font-semibold p-2.5 rounded-xl text-xs text-white transition shadow-sm">Ingresar al Sistema</button>
       </form>
@@ -668,15 +664,11 @@
       <form onsubmit="autenticarAdmin(event)" class="space-y-3">
         <div>
           <label class="text-xs text-slate-600 block mb-1">Usuario Administrador o Correo</label>
-          <input type="text" id="login-adm-user" required value="admin@ejemplo.com" placeholder="admin@ejemplo.com" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
+          <input type="text" id="login-adm-user" required placeholder="Usuario o correo" autocomplete="username" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
         </div>
         <div>
           <label class="text-xs text-slate-600 block mb-1">Contraseña</label>
-          <input type="password" id="login-adm-pass" required value="123456" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
-        </div>
-        <div class="bg-emerald-50/70 p-2 rounded-lg border border-emerald-100 text-[11px] text-emerald-700 flex justify-between items-center">
-          <span>Demo pre-cargado: <strong>admin@ejemplo.com</strong> / <strong>123456</strong></span>
-          <button type="button" onclick="document.getElementById('login-adm-user').value='admin@ejemplo.com';document.getElementById('login-adm-pass').value='123456';" class="underline text-[10px] font-bold">Llenar</button>
+          <input type="password" id="login-adm-pass" required placeholder="Contraseña" autocomplete="current-password" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 outline-none focus:border-emerald-500">
         </div>
         <button type="submit" id="btn-login-admin" class="w-full bg-emerald-600 hover:bg-emerald-500 font-semibold p-2.5 rounded-xl text-xs text-white transition shadow-sm">Iniciar Sesión</button>
       </form>
