@@ -1250,6 +1250,23 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
+  <!-- MODAL: CONFIRMAR ENTREGA DE PEDIDO -->
+  <div id="modal-entregar-pedido" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative space-y-4">
+      <button onclick="document.getElementById('modal-entregar-pedido').classList.add('hidden')" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900">✕</button>
+      <div class="text-center space-y-1">
+        <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg">🚚</div>
+        <h3 class="text-lg font-bold text-slate-900">Entregar pedido</h3>
+        <p class="text-xs text-slate-500">Verifica los productos a entregar</p>
+      </div>
+      <div id="entregar-pedido-contenido" class="space-y-2"></div>
+      <div class="flex gap-2">
+        <button type="button" onclick="document.getElementById('modal-entregar-pedido').classList.add('hidden')" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium text-sm hover:bg-slate-50">Cancelar</button>
+        <button id="btn-confirmar-entregar" class="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm">Confirmar entrega</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Script Principal de la Aplicación -->
   <script type="module" src="/src/app.js"></script>
 </body>

@@ -1540,18 +1540,28 @@ window.renderizarEntregas = function() {
   lista.forEach(ped => {
     const cli = clientesDB.find(c => c.id === ped.clienteId);
     const esHoy = ped.fechaEntrega === hoyISO;
-    const itemsResumen = (ped.items || []).slice(0, 3).map(i => `${fmtNum(i.cantidad)}× ${i.descripcion}`).join(', ');
-    const extraItems = (ped.items || []).length > 3 ? ` (+${ped.items.length - 3} más)` : '';
+    const items = ped.items || [];
+    const itemsResumen = items.slice(0, 3).map(i => `${fmtNum(i.cantidad)}× ${i.descripcion}`).join(', ');
+    const extraItems = items.length > 3 ? ` (+${items.length - 3} más)` : '';
     contenedor.innerHTML += `
-      <div class="bg-slate-50 border border-slate-300 p-3.5 rounded-xl space-y-2">
+      <div class="bg-slate-50 border border-emerald-300 p-3.5 rounded-xl space-y-2">
         <div class="flex justify-between items-start gap-2">
           <div class="min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-semibold">Entregar pedido</span>
+              <span class="shrink-0 text-[10px] px-2 py-0.5 rounded border ${esHoy ? 'bg-amber-500/20 text-amber-700 border-amber-200' : 'bg-blue-500/20 text-blue-600 border-blue-200'}">${esHoy ? 'Hoy' : fechaCorta(ped.fechaEntrega)}</span>
+            </div>
             <h3 class="font-bold text-sm text-slate-900 break-words">${esc(ped.clienteNombre)}</h3>
             <p class="text-xs text-slate-600">📞 ${cli ? esc(cli.telefono) : '—'}</p>
             ${cli && cli.direccion ? `<p class="text-[11px] text-slate-500">🏠 ${esc(cli.direccion)}</p>` : ''}
+            <div class="mt-1.5 bg-white border border-slate-200 rounded-lg p-2">
+              <p class="text-[10px] font-semibold text-slate-700 mb-1">Productos a entregar:</p>
+              <ul class="text-[10px] text-slate-600 space-y-0.5">
+                ${items.map(i => `<li>• ${fmtNum(i.cantidad)}× ${esc(i.descripcion)} ${i.precio ? `(${fmtMoneda(i.precio)})` : ''}</li>`).join('')}
+              </ul>
+            </div>
             <p class="text-[10px] text-slate-500 mt-0.5">${esc(itemsResumen)}${extraItems}</p>
           </div>
-          <span class="shrink-0 text-[10px] px-2 py-0.5 rounded border ${esHoy ? 'bg-amber-500/20 text-amber-700 border-amber-200' : 'bg-blue-500/20 text-blue-600 border-blue-200'}">${esHoy ? 'Hoy' : fechaCorta(ped.fechaEntrega)}</span>
         </div>
         <div class="flex justify-between items-center text-xs border-t border-slate-200 pt-2 gap-2">
           <div class="flex items-center gap-2">
@@ -1559,7 +1569,7 @@ window.renderizarEntregas = function() {
             <span class="font-mono font-bold text-emerald-600">${fmtMoneda(ped.total)}</span>
           </div>
           <button onclick="marcarEntregaRealizada(${ped.id})" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3 py-1 rounded-lg">
-            ✅ Entregado
+            🚚 Entregar pedido
           </button>
         </div>
         ${ped.notas ? `<p class="text-[10px] text-slate-500 border-t border-slate-200 pt-1.5">📝 ${esc(ped.notas)}</p>` : ''}
@@ -1571,12 +1581,44 @@ window.renderizarEntregas = function() {
 window.marcarEntregaRealizada = function(pedidoId) {
   const idx = pedidosDB.findIndex(p => p.id === pedidoId);
   if (idx === -1) return;
-  if (!confirm(`¿Marcar como entregado el pedido de "${pedidosDB[idx].clienteNombre}"?`)) return;
-  pedidosDB[idx].estado = 'entregado';
-  pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
-  localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
-  toast('✅ Entrega marcada como realizada');
-  renderizarAgenda();
+  const ped = pedidosDB[idx];
+  const items = ped.items || [];
+  let listaHtml = '';
+  if (items.length === 0) {
+    listaHtml = '<p class="text-xs text-slate-600">Sin productos registrados en este pedido.</p>';
+  } else {
+    listaHtml = `<ul class="space-y-1">${items.map(i => `<li class="flex justify-between text-xs"><span>${fmtNum(i.cantidad)}× ${esc(i.descripcion)}</span><span class="font-mono">${i.precio ? fmtMoneda(i.precio * i.cantidad) : ''}</span></li>`).join('')}</ul>`;
+  }
+  const modal = document.getElementById('modal-entregar-pedido');
+  const cont = document.getElementById('entregar-pedido-contenido');
+  const btn = document.getElementById('btn-confirmar-entregar');
+  if (!modal || !cont || !btn) {
+    if (!confirm(`¿Marcar como entregado el pedido de "${ped.clienteNombre}"?\n\nProductos:\n${items.map(i => `- ${i.cantidad}× ${i.descripcion}`).join('\n')}`)) return;
+    pedidosDB[idx].estado = 'entregado';
+    pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
+    localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
+    toast('✅ Entrega marcada como realizada');
+    renderizarAgenda();
+    return;
+  }
+  cont.innerHTML = `
+    <div class="space-y-2">
+      <p class="text-sm font-semibold text-slate-900">${esc(ped.clienteNombre)}</p>
+      <p class="text-xs text-slate-600">Total: <span class="font-mono font-bold text-emerald-600">${fmtMoneda(ped.total)}</span></p>
+      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2 max-h-60 overflow-auto">
+        ${listaHtml}
+      </div>
+    </div>
+  `;
+  btn.onclick = function() {
+    pedidosDB[idx].estado = 'entregado';
+    pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
+    localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
+    modal.classList.add('hidden');
+    toast('✅ Pedido entregado');
+    renderizarAgenda();
+  };
+  modal.classList.remove('hidden');
 };
 
 window.camposProductoHTML = function(p) {
@@ -3390,6 +3432,7 @@ window.sincronizarAhora = async function() {
         await subirColeccion('productos', productosDB, 'productos');
         await subirColeccion('clientes', clientesDB, 'clientes y visitas');
         await subirColeccion('ventas', ventasDB, 'notas de venta');
+        await subirColeccion('pedidos', pedidosDB, 'pedidos');
         await subirColeccion('nominas', nominasDB, 'recibos de nómina');
         await subirColeccion('vendedores', vendedoresDB, 'vendedores');
 
@@ -3432,6 +3475,7 @@ window.sincronizarAhora = async function() {
         await descargarColeccion('productos', () => productosDB, v => { productosDB = v; guardarProductosDB(); }, 'productos', renderizarInventario);
         await descargarColeccion('clientes', () => clientesDB, v => { clientesDB = v; guardarClientesDB(); }, 'clientes y visitas', () => { renderizarAgenda(); renderizarMisClientes(); });
         await descargarColeccion('ventas', () => ventasDB, v => { ventasDB = v; guardarVentasDB(); }, 'ventas del equipo', () => { renderizarVentasSemana(); renderizarReporteVentas(); });
+        await descargarColeccion('pedidos', () => pedidosDB, v => { pedidosDB = v; localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB)); }, 'pedidos', () => { renderizarAgenda(); });
         await descargarColeccion('vendedores', () => vendedoresDB, v => { vendedoresDB = v; guardarVendedoresDB(); }, 'vendedores', () => { poblarSelectsVendedores(); renderizarVendedores(); });
         await descargarColeccion('nominas', () => nominasDB, v => { nominasDB = v; guardarNominasDB(); }, 'recibos de nómina', renderizarHistorialNominasAdmin);
       }
@@ -3517,6 +3561,30 @@ window.sincronizarAhora = async function() {
           log(`💾 ${misClientesLocales.length} clientes resguardados en Local Storage`, 'info');
         }
 
+        // Subir SUS pedidos
+        const misPedidosLocales = pedidosDB.filter(p => esMioDeVendedor(p) || (p.vendedorId != null && String(p.vendedorId) === miVendedorId));
+        let pSubidos = 0;
+        try {
+          for (const p of misPedidosLocales) {
+            if (!p.id) continue;
+            const pedDoc = sanitizarParaFirestore({
+              ...p,
+              adminId: miAdminId,
+              vendedorId: p.vendedorId || miVendedorId,
+              negocio: miNegocio,
+              negocioId: miNegocioId
+            });
+            await conTimeout(colTenant(db, tenant, 'pedidos').doc(String(p.id)).set(pedDoc, { merge: true }), 3500);
+            pSubidos++;
+          }
+          if (pSubidos > 0) {
+            log(`☁️ ${pSubidos} pedidos sincronizados con tu Administrador`, 'success');
+            subidaCloudOk = true;
+          }
+        } catch (eVendPed) {
+          console.warn("Subida pedidos vendedor Firestore:", eVendPed.message);
+        }
+
         // 3. Descargar el catálogo OFICIAL de productos de su Administrador
         try {
           const snapProds = await conTimeout(colTenant(db, tenant, 'productos').get(), 5000);
@@ -3553,6 +3621,25 @@ window.sincronizarAhora = async function() {
           }
         } catch (errCliVend) {
           console.warn("Descarga clientes vendedor Firestore:", errCliVend.message);
+        }
+
+        // Descargar SUS pedidos
+        try {
+          const snapPed = await conTimeout(colTenant(db, tenant, 'pedidos').where('vendedorId', '==', miVendedorId).get(), 5000);
+          if (snapPed && !snapPed.empty) {
+            const pedAdmin = snapPed.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (pedAdmin.length > 0) {
+              const mapPed = new Map(pedidosDB.map(p => [String(p.id), p]));
+              pedAdmin.forEach(r => mapPed.set(String(r.id), r));
+              pedidosDB = Array.from(mapPed.values());
+              localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
+              renderizarAgenda();
+              descargaCloudOk = true;
+              log(`📥 ${pedAdmin.length} pedidos actualizados en tu Local Storage`, 'success');
+            }
+          }
+        } catch (errPedVend) {
+          console.warn("Descarga pedidos vendedor Firestore:", errPedVend.message);
         }
 
         // 5. Descargar SUS recibos de nómina emitidos por el Administrador
