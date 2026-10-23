@@ -2524,7 +2524,7 @@ window.finalizarPedido = function() {
     clienteNombre: clienteOperacion.nombre,
     telefono: clienteOperacion.telefono,
     vendedorNombre: nombreUsuarioActual(),
-    negocioNombre: (usuarioActual && usuarioActual.negocio) || localStorage.getItem('negocio_nombre') || 'Ventas de Campo'
+    negocioNombre: (usuarioActual && usuarioActual.negocio) || localStorage.getItem('negocio_nombre') || 'Vende+'
   };
   cerrarPantallaOperacion();
   renderizarAgenda();
@@ -2595,7 +2595,7 @@ window.finalizarVenta = function() {
   const op = {
     ...venta, tipo: 'venta', total,
     telefono: clienteOperacion ? clienteOperacion.telefono : '',
-    negocioNombre: (usuarioActual && usuarioActual.negocio) || localStorage.getItem('negocio_nombre') || 'Ventas de Campo'
+    negocioNombre: (usuarioActual && usuarioActual.negocio) || localStorage.getItem('negocio_nombre') || 'Vende+'
   };
   cerrarPantallaOperacion();
   renderizarInventario();
