@@ -1455,10 +1455,21 @@ window.cambiarSubVistaAdmin = function(subvista) {
 let subVistaAgendaActual = 'visitas';
 window.cambiarSubVistaAgenda = function(sv) {
   subVistaAgendaActual = sv;
-  const ids = ['subnav-agenda-visitas','subnav-agenda-entregas','subnav-agenda-totales','subnav-agenda-mis'];
+  const ids = ['subnav-agenda-visitas','subnav-agenda-entregas','subnav-agenda-entregas-admin','subnav-agenda-totales','subnav-agenda-mis'];
   ids.forEach(id => { const el=document.getElementById(id); if(el) el.className='py-2 rounded-lg text-slate-600'; });
-  const activo = document.getElementById(sv === 'visitas' ? 'subnav-agenda-visitas' : sv === 'entregas' ? 'subnav-agenda-entregas' : sv === 'visitas-totales' ? 'subnav-agenda-totales' : 'subnav-agenda-mis');
-  if (activo) activo.className='py-2 rounded-lg bg-blue-600 text-white font-bold';
+  let activoId = null;
+  if (sv === 'visitas') activoId = 'subnav-agenda-visitas';
+  else if (sv === 'entregas') {
+    if (usuarioActual && usuarioActual.rol === 'admin') activoId = 'subnav-agenda-entregas-admin';
+    else activoId = 'subnav-agenda-entregas';
+  }
+  else if (sv === 'visitas-totales') activoId = 'subnav-agenda-totales';
+  else if (sv === 'mis-visitas') activoId = 'subnav-agenda-mis';
+  const activo = document.getElementById(activoId);
+  if (activo) {
+    if (sv === 'entregas') activo.className='py-2 rounded-lg bg-emerald-600 text-white font-bold';
+    else activo.className='py-2 rounded-lg bg-blue-600 text-white font-bold';
+  }
   renderizarAgenda();
 };
 
@@ -1519,7 +1530,11 @@ window.renderizarEntregas = function() {
 
   let lista = pedidosDB.filter(p => p.estado === 'pendiente');
   if (usuarioActual && usuarioActual.rol === 'vendedor') {
-    lista = lista.filter(p => p.vendedorId === usuarioActual.id);
+    lista = lista.filter(p => String(p.vendedorId) === String(usuarioActual.id) || String(p.vendedorId) === String(usuarioActual.authUid) || String(p.vendedorId) === String(usuarioActual.uid));
+  } else if (usuarioActual && usuarioActual.rol === 'admin') {
+    const tenant = obtenerTenantActual();
+    const admId = String(usuarioActual.id || usuarioActual.authUid || tenant.adminId || '');
+    lista = lista.filter(p => String(p.adminId || '') === admId || String(p.negocioId || '') === negocioIdDe(tenant) || !p.adminId);
   }
 
   const hoyISO = isoFecha(new Date());
@@ -1578,27 +1593,38 @@ window.renderizarEntregas = function() {
   });
 };
 
+function completarEntregaPedido(idx) {
+  if (idx < 0 || !pedidosDB[idx]) return;
+  pedidosDB[idx].estado = 'entregado';
+  pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
+  pedidosDB[idx].updatedAt = Date.now();
+  pedidosDB[idx].fechaSync = Date.now();
+  localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
+  const modal = document.getElementById('modal-entregar-pedido');
+  if (modal) modal.classList.add('hidden');
+  toast('✅ Pedido entregado');
+  renderizarAgenda();
+  if (navigator.onLine && typeof window.sincronizarAhora === 'function') {
+    setTimeout(() => { window.sincronizarAhora(); }, 700);
+  }
+}
+
 window.marcarEntregaRealizada = function(pedidoId) {
-  const idx = pedidosDB.findIndex(p => p.id === pedidoId);
+  const idx = pedidosDB.findIndex(p => String(p.id) === String(pedidoId));
   if (idx === -1) return;
   const ped = pedidosDB[idx];
   const items = ped.items || [];
-  let listaHtml = '';
-  if (items.length === 0) {
-    listaHtml = '<p class="text-xs text-slate-600">Sin productos registrados en este pedido.</p>';
-  } else {
-    listaHtml = `<ul class="space-y-1">${items.map(i => `<li class="flex justify-between text-xs"><span>${fmtNum(i.cantidad)}× ${esc(i.descripcion)}</span><span class="font-mono">${i.precio ? fmtMoneda(i.precio * i.cantidad) : ''}</span></li>`).join('')}</ul>`;
-  }
+  const listaHtml = items.length === 0
+    ? '<p class="text-xs text-slate-600">Sin productos registrados en este pedido.</p>'
+    : `<ul class="space-y-1">${items.map(i => `<li class="flex justify-between text-xs"><span>${fmtNum(i.cantidad)}× ${esc(i.descripcion)}</span><span class="font-mono">${i.precio ? fmtMoneda(i.precio * i.cantidad) : ''}</span></li>`).join('')}</ul>`;
+
   const modal = document.getElementById('modal-entregar-pedido');
   const cont = document.getElementById('entregar-pedido-contenido');
   const btn = document.getElementById('btn-confirmar-entregar');
   if (!modal || !cont || !btn) {
-    if (!confirm(`¿Marcar como entregado el pedido de "${ped.clienteNombre}"?\n\nProductos:\n${items.map(i => `- ${i.cantidad}× ${i.descripcion}`).join('\n')}`)) return;
-    pedidosDB[idx].estado = 'entregado';
-    pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
-    localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
-    toast('✅ Entrega marcada como realizada');
-    renderizarAgenda();
+    if (confirm(`¿Marcar como entregado el pedido de "${ped.clienteNombre}"?\n\nProductos:\n${items.map(i => `- ${i.cantidad}× ${i.descripcion}`).join('\n')}`)) {
+      completarEntregaPedido(idx);
+    }
     return;
   }
   cont.innerHTML = `
@@ -1610,14 +1636,34 @@ window.marcarEntregaRealizada = function(pedidoId) {
       </div>
     </div>
   `;
-  btn.onclick = function() {
-    pedidosDB[idx].estado = 'entregado';
-    pedidosDB[idx].fechaEntregaReal = new Date().toISOString();
-    localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
-    modal.classList.add('hidden');
-    toast('✅ Pedido entregado');
-    renderizarAgenda();
-  };
+  btn.onclick = function() { completarEntregaPedido(idx); };
+  modal.classList.remove('hidden');
+};
+
+window.verProductosPedido = function(pedidoId) {
+  const ped = pedidosDB.find(p => String(p.id) === String(pedidoId));
+  if (!ped) return;
+  const items = ped.items || [];
+  const modal = document.getElementById('modal-entregar-pedido');
+  const cont = document.getElementById('entregar-pedido-contenido');
+  const btn = document.getElementById('btn-confirmar-entregar');
+  if (!modal || !cont) return;
+  cont.innerHTML = `
+    <div class="space-y-2">
+      <p class="text-sm font-semibold text-slate-900">${esc(ped.clienteNombre)}</p>
+      <p class="text-xs text-slate-600">Entrega: ${fechaLegible(ped.fechaEntrega)} · Total: <span class="font-mono font-bold text-emerald-600">${fmtMoneda(ped.total)}</span></p>
+      <div class="bg-slate-50 border border-slate-200 rounded-lg p-2 max-h-60 overflow-auto">
+        ${items.length === 0 ? '<p class="text-xs text-slate-600">Sin productos registrados.</p>' : `<ul class="space-y-1">${items.map(i => `<li class="flex justify-between text-xs"><span>${fmtNum(i.cantidad)}× ${esc(i.descripcion)}</span><span class="font-mono">${i.precio ? fmtMoneda(i.precio * i.cantidad) : ''}</span></li>`).join('')}</ul>`}
+      </div>
+    </div>
+  `;
+  if (btn) {
+    btn.innerText = 'Cerrar';
+    btn.onclick = function() {
+      modal.classList.add('hidden');
+      btn.innerText = 'Confirmar entrega';
+    };
+  }
   modal.classList.remove('hidden');
 };
 
@@ -2546,17 +2592,23 @@ window.finalizarPedido = function() {
   const notas = document.getElementById('op-notas').value.trim();
   const fecha = new Date().toISOString();
 
+  const tenantPed = obtenerTenantActual();
   pedidosDB.push({
     id: Date.now(),
     fecha,
+    fechaCreacion: fecha,
+    adminId: tenantPed.adminId,
+    negocioId: negocioIdDe(tenantPed),
+    negocio: tenantPed.negocio,
     clienteId: clienteOperacion.id,
     clienteNombre: clienteOperacion.nombre,
-    vendedorId: clienteOperacion.vendedorId || (usuarioActual && usuarioActual.id),
+    vendedorId: clienteOperacion.vendedorId || (usuarioActual && (usuarioActual.id || usuarioActual.authUid || usuarioActual.uid)),
     items,
     total,
     fechaEntrega: fechaEntregaSel,
     notas,
-    estado: 'pendiente'
+    estado: 'pendiente',
+    updatedAt: Date.now()
   });
   localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
 
@@ -3259,6 +3311,43 @@ window.verificarConexionFirebase = async function() {
   }
 };
 
+// Huella ligera de un registro para no volver a subir lo que ya está igual.
+// Se guarda en localStorage: si el registro no cambió, no se reenvía a la nube.
+function huellaSincronizacion(obj) {
+  let s;
+  try {
+    s = JSON.stringify(obj);
+  } catch (e) {
+    return 'err';
+  }
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36) + ':' + s.length;
+}
+
+// Marca de tiempo de un registro (para saber cuál versión es más reciente)
+function tsRegistro(x) {
+  const raw = x && (x.fechaSync || x.updatedAt);
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw;
+  const t = Date.parse(raw);
+  return isNaN(t) ? 0 : t;
+}
+
+// Une lo local con lo descargado sin perder cambios locales más recientes.
+function fusionarRemotos(locales, remotos) {
+  const mapa = new Map((locales || []).map(x => [String(x.id), x]));
+  (remotos || []).forEach(r => {
+    const existente = mapa.get(String(r.id));
+    if (!existente || tsRegistro(r) >= tsRegistro(existente)) {
+      mapa.set(String(r.id), { ...existente, ...r });
+    }
+  });
+  return Array.from(mapa.values());
+}
+
 // Utilidad para limpiar valores undefined antes de enviar a Firestore
 function sanitizarParaFirestore(val) {
   if (val === undefined) return null;
@@ -3404,24 +3493,32 @@ window.sincronizarAhora = async function() {
         // -------------------------------------------------------
         // SUBIR datos locales de ESTE negocio a negocios/{negocioId}
         // -------------------------------------------------------
+        const syncMeta = JSON.parse(localStorage.getItem('sync_huellas_' + miNegocioId) || '{}');
         const subirColeccion = async (coleccion, lista, etiqueta) => {
           let subidos = 0;
           try {
             for (const item of lista) {
               if (!item || !item.id) continue;
+              const key = coleccion + '_' + item.id;
+              const huella = huellaSincronizacion(item);
+              if (syncMeta[key] === huella) continue;
               const docSubir = sanitizarParaFirestore({
                 ...item,
                 adminId: miAdminId,
                 adminEmail: miEmail,
                 negocio: miNegocio,
-                negocioId: miNegocioId
+                negocioId: miNegocioId,
+                fechaSync: Date.now()
               });
               await conTimeout(colTenant(db, tenant, coleccion).doc(String(item.id)).set(docSubir, { merge: true }), 3500);
+              syncMeta[key] = huella;
               subidos++;
             }
             if (subidos > 0) {
-              log(`☁️ ${subidos} ${etiqueta} de "${miNegocio}" sincronizados a Firestore`, 'success');
+              log(`☁️ ${subidos} ${etiqueta} nuevos/actualizados de "${miNegocio}" subidos`, 'success');
               subidaCloudOk = true;
+            } else {
+              log(`✅ ${etiqueta}: todo estaba ya sincronizado`, 'info');
             }
           } catch (eSub) {
             console.warn(`Subida ${coleccion} Firestore:`, eSub.message);
@@ -3435,6 +3532,7 @@ window.sincronizarAhora = async function() {
         await subirColeccion('pedidos', pedidosDB, 'pedidos');
         await subirColeccion('nominas', nominasDB, 'recibos de nómina');
         await subirColeccion('vendedores', vendedoresDB, 'vendedores');
+        localStorage.setItem('sync_huellas_' + miNegocioId, JSON.stringify(syncMeta));
 
         // Los vendedores también llevan espejo de perfil en la raíz
         // (para login directo por UID y directorio de Root)
@@ -3453,31 +3551,34 @@ window.sincronizarAhora = async function() {
       // ya garantiza el aislamiento: otros negocios nunca se leen)
       // -------------------------------------------------------
       if (db && navigator.onLine && miNegocioId && miNegocioId !== 'adm_1') {
-        const descargarColeccion = async (coleccion, obtener, fijar, etiqueta, render) => {
+        const lastSync = JSON.parse(localStorage.getItem('last_sync_' + miNegocioId) || '{}');
+        const descargarColeccionNuevo = async (coleccion, obtener, fijar, etiqueta, render) => {
           try {
-            const snap = await conTimeout(colTenant(db, tenant, coleccion).get(), 5000);
-            if (snap && !snap.empty) {
-              const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-              if (remotos.length > 0) {
-                const mapa = new Map(obtener().map(x => [String(x.id), x]));
-                remotos.forEach(r => mapa.set(String(r.id), r));
-                fijar(Array.from(mapa.values()));
-                if (render) render();
-                descargaCloudOk = true;
-                log(`📥 ${remotos.length} ${etiqueta} consolidados desde tu negocio`, 'success');
-              }
-            }
+            const desde = lastSync[coleccion];
+            let q = colTenant(db, tenant, coleccion);
+            if (desde) q = q.where('fechaSync', '>', desde).orderBy('fechaSync');
+            const snap = await conTimeout(q.limit(500).get(), desde ? 5000 : 10000);
+            if (!snap || snap.empty) return;
+            const remotos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            if (remotos.length === 0) return;
+            fijar(fusionarRemotos(obtener(), remotos));
+            if (render) render();
+            descargaCloudOk = true;
+            log(`📥 ${remotos.length} ${etiqueta} ${desde ? 'nuevos/actualizados' : 'descargados (primera vez)'}`, 'success');
+            remotos.forEach(r => { if (r.fechaSync && r.fechaSync > (lastSync[coleccion] || 0)) lastSync[coleccion] = r.fechaSync; });
           } catch (eDesc) {
             console.warn(`Descarga ${coleccion} Firestore:`, eDesc.message);
+            log(`⚠️ No se pudieron leer ${etiqueta} (${eDesc.message.includes('permission') ? 'permiso denegado' : eDesc.message})`, 'warn');
           }
         };
 
-        await descargarColeccion('productos', () => productosDB, v => { productosDB = v; guardarProductosDB(); }, 'productos', renderizarInventario);
-        await descargarColeccion('clientes', () => clientesDB, v => { clientesDB = v; guardarClientesDB(); }, 'clientes y visitas', () => { renderizarAgenda(); renderizarMisClientes(); });
-        await descargarColeccion('ventas', () => ventasDB, v => { ventasDB = v; guardarVentasDB(); }, 'ventas del equipo', () => { renderizarVentasSemana(); renderizarReporteVentas(); });
-        await descargarColeccion('pedidos', () => pedidosDB, v => { pedidosDB = v; localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB)); }, 'pedidos', () => { renderizarAgenda(); });
-        await descargarColeccion('vendedores', () => vendedoresDB, v => { vendedoresDB = v; guardarVendedoresDB(); }, 'vendedores', () => { poblarSelectsVendedores(); renderizarVendedores(); });
-        await descargarColeccion('nominas', () => nominasDB, v => { nominasDB = v; guardarNominasDB(); }, 'recibos de nómina', renderizarHistorialNominasAdmin);
+        await descargarColeccionNuevo('productos', () => productosDB, v => { productosDB = v; guardarProductosDB(); }, 'productos', renderizarInventario);
+        await descargarColeccionNuevo('clientes', () => clientesDB, v => { clientesDB = v; guardarClientesDB(); }, 'clientes y visitas', () => { renderizarAgenda(); renderizarMisClientes(); });
+        await descargarColeccionNuevo('ventas', () => ventasDB, v => { ventasDB = v; guardarVentasDB(); }, 'ventas del equipo', () => { renderizarVentasSemana(); renderizarReporteVentas(); });
+        await descargarColeccionNuevo('pedidos', () => pedidosDB, v => { pedidosDB = v; localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB)); }, 'pedidos', () => { renderizarAgenda(); });
+        await descargarColeccionNuevo('vendedores', () => vendedoresDB, v => { vendedoresDB = v; guardarVendedoresDB(); }, 'vendedores', () => { poblarSelectsVendedores(); renderizarVendedores(); });
+        await descargarColeccionNuevo('nominas', () => nominasDB, v => { nominasDB = v; guardarNominasDB(); }, 'recibos de nómina', renderizarHistorialNominasAdmin);
+        localStorage.setItem('last_sync_' + miNegocioId, JSON.stringify(lastSync));
       }
 
       // Consolidación final y persistencia en Local Storage
@@ -3511,79 +3612,48 @@ window.sincronizarAhora = async function() {
       } else if (!miNegocioId || miNegocioId === 'adm_1') {
         log('⚠️ Tu usuario no tiene un negocio asignado. Pide a tu Administrador o al Root que te asocien a un negocio para poder sincronizar.', 'warn');
       } else {
+        const syncMetaVend = JSON.parse(localStorage.getItem('sync_huellas_' + miNegocioId + '_' + miVendedorId) || '{}');
+        const subirPropioVendedor = async (coleccion, lista, etiqueta) => {
+          let subidos = 0;
+          try {
+            for (const item of lista) {
+              if (!item || !item.id) continue;
+              const key = coleccion + '_' + item.id;
+              if (syncMetaVend[key] === huellaSincronizacion(item)) continue;
+              const doc = sanitizarParaFirestore({
+                ...item,
+                adminId: miAdminId,
+                vendedorIdLocal: item.vendedorIdLocal || item.vendedorId || null,
+                vendedorId: miVendedorId,
+                negocio: miNegocio,
+                negocioId: miNegocioId,
+                fechaSync: Date.now()
+              });
+              await conTimeout(colTenant(db, tenant, coleccion).doc(String(item.id)).set(doc, { merge: true }), 3500);
+              syncMetaVend[key] = huellaSincronizacion(item);
+              subidos++;
+            }
+            if (subidos > 0) {
+              log(`☁️ ${subidos} ${etiqueta} nuevos/actualizados enviados a tu Administrador`, 'success');
+              subidaCloudOk = true;
+            } else {
+              log(`✅ ${etiqueta}: todo estaba ya sincronizado`, 'info');
+            }
+          } catch (eSub) {
+            console.warn(`Subida ${coleccion} vendedor Firestore:`, eSub.message);
+            log(`⚠️ No se pudieron subir ${etiqueta} (${eSub.message.includes('permission') ? 'permiso denegado por reglas' : eSub.message})`, 'warn');
+          }
+        };
+
         // 1. Subir SUS ventas realizadas hacia la cuenta de su Administrador
-        const misVentasLocales = ventasDB.filter(v => esMioDeVendedor(v));
-        let vSubidas = 0;
-        try {
-          for (const v of misVentasLocales) {
-            if (!v.id) continue;
-            const ventaDoc = sanitizarParaFirestore({
-              ...v,
-              adminId: miAdminId,
-              vendedorId: miVendedorId,
-              negocio: miNegocio,
-              negocioId: miNegocioId
-            });
-            await conTimeout(colTenant(db, tenant, 'ventas').doc(String(v.id)).set(ventaDoc, { merge: true }), 3500);
-            vSubidas++;
-          }
-          if (vSubidas > 0) {
-            log(`☁️ ${vSubidas} ventas subidas hacia la cuenta de tu Administrador`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eVendVentas) {
-          console.warn("Subida ventas vendedor Firestore:", eVendVentas.message);
-          log(`💾 ${misVentasLocales.length} ventas resguardadas en Local Storage`, 'info');
-        }
+        await subirPropioVendedor('ventas', ventasDB.filter(v => esMioDeVendedor(v)), 'ventas');
 
         // 2. Subir SUS clientes registrados (incluyen sus visitas/agenda)
-        const misClientesLocales = clientesDB.filter(c => esMioDeVendedor(c));
-        let cSubidos = 0;
-        try {
-          for (const c of misClientesLocales) {
-            if (!c.id) continue;
-            const cliDoc = sanitizarParaFirestore({
-              ...c,
-              adminId: miAdminId,
-              vendedorId: miVendedorId,
-              negocio: miNegocio,
-              negocioId: miNegocioId
-            });
-            await conTimeout(colTenant(db, tenant, 'clientes').doc(String(c.id)).set(cliDoc, { merge: true }), 3500);
-            cSubidos++;
-          }
-          if (cSubidos > 0) {
-            log(`☁️ ${cSubidos} clientes sincronizados con tu Administrador`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eVendCli) {
-          console.warn("Subida clientes vendedor Firestore:", eVendCli.message);
-          log(`💾 ${misClientesLocales.length} clientes resguardados en Local Storage`, 'info');
-        }
+        await subirPropioVendedor('clientes', clientesDB.filter(c => esMioDeVendedor(c)), 'clientes');
 
-        // Subir SUS pedidos
-        const misPedidosLocales = pedidosDB.filter(p => esMioDeVendedor(p) || (p.vendedorId != null && String(p.vendedorId) === miVendedorId));
-        let pSubidos = 0;
-        try {
-          for (const p of misPedidosLocales) {
-            if (!p.id) continue;
-            const pedDoc = sanitizarParaFirestore({
-              ...p,
-              adminId: miAdminId,
-              vendedorId: p.vendedorId || miVendedorId,
-              negocio: miNegocio,
-              negocioId: miNegocioId
-            });
-            await conTimeout(colTenant(db, tenant, 'pedidos').doc(String(p.id)).set(pedDoc, { merge: true }), 3500);
-            pSubidos++;
-          }
-          if (pSubidos > 0) {
-            log(`☁️ ${pSubidos} pedidos sincronizados con tu Administrador`, 'success');
-            subidaCloudOk = true;
-          }
-        } catch (eVendPed) {
-          console.warn("Subida pedidos vendedor Firestore:", eVendPed.message);
-        }
+        // 3. Subir SUS pedidos (las reglas exigen vendedorId == UID de Auth)
+        await subirPropioVendedor('pedidos', pedidosDB.filter(p => esMioDeVendedor(p) || (p.vendedorId != null && String(p.vendedorId) === miVendedorId)), 'pedidos');
+        localStorage.setItem('sync_huellas_' + miNegocioId + '_' + miVendedorId, JSON.stringify(syncMetaVend));
 
         // 3. Descargar el catálogo OFICIAL de productos de su Administrador
         try {
@@ -3609,9 +3679,7 @@ window.sincronizarAhora = async function() {
           if (snapCli && !snapCli.empty) {
             const cliAdmin = snapCli.docs.map(d => ({ id: d.id, ...d.data() }));
             if (cliAdmin.length > 0) {
-              const mapCli = new Map(clientesDB.map(c => [String(c.id), c]));
-              cliAdmin.forEach(r => mapCli.set(String(r.id), r));
-              clientesDB = Array.from(mapCli.values());
+              clientesDB = fusionarRemotos(clientesDB, cliAdmin);
               guardarClientesDB();
               renderizarAgenda();
               renderizarMisClientes();
@@ -3625,19 +3693,21 @@ window.sincronizarAhora = async function() {
 
         // Descargar SUS pedidos
         try {
-          const snapPed = await conTimeout(colTenant(db, tenant, 'pedidos').where('vendedorId', '==', miVendedorId).get(), 5000);
+          const lastSyncVend = JSON.parse(localStorage.getItem('last_sync_' + miNegocioId + '_' + miVendedorId) || '{}');
+          const snapPed = await conTimeout(colTenant(db, tenant, 'pedidos').where('vendedorId', '==', miVendedorId).limit(500).get(), 8000);
           if (snapPed && !snapPed.empty) {
-            const pedAdmin = snapPed.docs.map(d => ({ id: d.id, ...d.data() }));
+            const pedAdmin = snapPed.docs.map(d => ({ id: d.id, ...d.data() }))
+              .filter(r => !lastSyncVend.pedidos || (r.fechaSync || 0) > lastSyncVend.pedidos);
             if (pedAdmin.length > 0) {
-              const mapPed = new Map(pedidosDB.map(p => [String(p.id), p]));
-              pedAdmin.forEach(r => mapPed.set(String(r.id), r));
-              pedidosDB = Array.from(mapPed.values());
+              pedidosDB = fusionarRemotos(pedidosDB, pedAdmin);
               localStorage.setItem('pedidos_db', JSON.stringify(pedidosDB));
               renderizarAgenda();
               descargaCloudOk = true;
-              log(`📥 ${pedAdmin.length} pedidos actualizados en tu Local Storage`, 'success');
+              log(`📥 ${pedAdmin.length} pedidos nuevos/actualizados en tu Local Storage`, 'success');
+              pedAdmin.forEach(r => { if (r.fechaSync && r.fechaSync > (lastSyncVend.pedidos||0)) lastSyncVend.pedidos = r.fechaSync; });
             }
           }
+          localStorage.setItem('last_sync_' + miNegocioId + '_' + miVendedorId, JSON.stringify(lastSyncVend));
         } catch (errPedVend) {
           console.warn("Descarga pedidos vendedor Firestore:", errPedVend.message);
         }
